@@ -3481,11 +3481,11 @@ function datasetSummary(dataset) {
   return `${formatInteger(dataset.patients.length)} pacientes, ${formatInteger(dataset.sessions.length)} sessões e ${formatInteger(dataset.payments.length)} lançamentos de pagamento`;
 }
 
-/** Replaces every record after confirmation; true when replaced. */
+/** Replaces every record, settings included, after confirmation; true when replaced. */
 function confirmReplace(app, dataset, origin) {
   const message = `${origin}: ${datasetSummary(dataset)}.\n\nIsto substitui TODOS os dados atuais, inclusive o que foi registrado no sistema. Exporte um backup antes, se precisar.\n\nSubstituir agora?`;
   if (!confirm(message)) return false;
-  app.commit({ ...dataset, settings: { ...dataset.settings, ...app.dataset.settings } });
+  app.commit(dataset);
   app.setUi({ patientId: null, view: 'painel' });
   toast('Dados substituídos.');
   return true;
@@ -3505,7 +3505,8 @@ function importCard(app) {
       try {
         const dataset = await importWorkbookFile(file, app.dataset.settings);
         status.textContent = '';
-        confirmReplace(app, dataset, `Planilha "${file.name}"`);
+        // A new spreadsheet keeps this system's settings; a restored backup brings its own.
+        confirmReplace(app, { ...dataset, settings: { ...dataset.settings, ...app.dataset.settings } }, `Planilha "${file.name}"`);
       } catch (error) {
         status.textContent = `Não foi possível ler a planilha: ${error.message}`;
       }
