@@ -2999,10 +2999,11 @@ const storeHandle = (handle) => withStore('readwrite', (store) => store.put(hand
 const forgetHandle = () => withStore('readwrite', (store) => store.delete(HANDLE_KEY));
 
 /**
- * @param {{ snapshot: () => object, onChange: (status) => void }} options
+ * @param {{ snapshot: () => object, onChange: (status) => void, hasData?: () => boolean }} options
  *   `snapshot` returns what to save; `onChange` receives { state, fileName, lastSavedAt, error, remembered }.
+ *   While `hasData` is false nothing is written, so an empty browser never overwrites a backup.
  */
-function createFileBackup({ snapshot, onChange }) {
+function createFileBackup({ snapshot, onChange, hasData = () => true }) {
   let handle = null;
   let state = isFileBackupSupported() ? BACKUP_STATE.OFF : BACKUP_STATE.UNSUPPORTED;
   let lastSavedAt = null;
@@ -3020,7 +3021,7 @@ function createFileBackup({ snapshot, onChange }) {
   async function write() {
     clearTimeout(timer);
     timer = null;
-    if (!handle) return;
+    if (!handle || !hasData()) return;
     try {
       const writable = await handle.createWritable();
       await writable.write(JSON.stringify(snapshot()));
@@ -3045,8 +3046,9 @@ function createFileBackup({ snapshot, onChange }) {
       update({ state: permission === 'granted' ? BACKUP_STATE.ACTIVE : BACKUP_STATE.NEEDS_PERMISSION });
     },
 
-    /** Asks for the file (needs a click) and writes the first copy. False when cancelled. */
+    /** Asks for the file (needs a click) and writes the first copy. False when cancelled or empty. */
     async choose() {
+      if (!hasData()) return false;
       try {
         handle = await globalThis.showSaveFilePicker({
           suggestedName: 'controle-clinico-backup.json',
@@ -3771,7 +3773,10 @@ function automaticBackup(app) {
   const { backup } = app;
   if (!backup) return null;
   const status = backup.status();
+  const isEmpty = app.dataset.patients.length === 0;
   const choose = async () => {
+    // Picking an existing backup file would overwrite it with this browser's empty records.
+    if (isEmpty) return toast('Restaure o backup (ou importe a planilha) antes de ligar o backup automático.', 'danger');
     if (await backup.choose()) toast(backup.status().remembered ? 'Backup automático ligado.' : 'Backup ligado nesta visita; o navegador não guardou o arquivo para as próximas.');
   };
   const actions = {
@@ -3790,6 +3795,9 @@ function automaticBackup(app) {
       'Escolha um arquivo dentro da pasta do OneDrive ou do Google Drive do computador. A partir daí, cada registro é gravado nele em segundos, e a nuvem guarda a cópia. Funciona no Chrome e no Edge. Ao abrir o sistema num dia novo, o navegador pode pedir um clique em "Reativar backup" para voltar a gravar.',
     ),
     backupStatusLine(status),
+    isEmpty
+      ? h('p', { class: 'muted' }, 'Este navegador ainda não tem dados: primeiro use "Restaurar backup" (abaixo) ou importe a planilha. Só depois ligue o backup automático, para o arquivo escolhido não ser gravado vazio.')
+      : null,
     actions.length ? h('div', { class: 'page-actions' }, actions) : null,
   );
 }
@@ -3830,6 +3838,7 @@ function backupCard(app) {
         const { notepad: notes, savedAt: backupSavedAt, ...records } = JSON.parse(await file.text());
         const data = migrateDataset(records);
         if (!data) throw new Error('arquivo não é um backup deste sistema');
+        if (!data.patients.length) throw new Error('o arquivo não tem nenhum paciente (backup vazio)');
         const savedAt = backupSavedAt ? ` (salvo em ${new Date(backupSavedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })})` : '';
         if (confirmReplace(app, data, `Backup "${file.name}"${savedAt}`)) replaceNotepad(notes);
       } catch (error) {
@@ -6571,7 +6580,11 @@ function startBackup(app) {
     if (lastState !== null && status.state !== lastState) app.setUi({});
     lastState = status.state;
   };
-  const backup = createFileBackup({ snapshot: () => backupSnapshot(app.dataset), onChange: show });
+  const backup = createFileBackup({
+    snapshot: () => backupSnapshot(app.dataset),
+    onChange: show,
+    hasData: () => app.dataset.patients.length > 0,
+  });
   app.backup = backup;
   show(backup.status());
   let lastDataset = app.dataset;
