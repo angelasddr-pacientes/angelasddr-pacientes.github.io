@@ -221,6 +221,18 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .dot-signals .geo-dot:nth-child(6) { animation-delay: 120ms; }
 .dot-signals .geo-dot:nth-child(7) { animation-delay: 144ms; }
 .dot-signals .geo-dot:nth-child(8) { animation-delay: 168ms; }
+/* Not confirmed or not active (domain/signals.js, CALM_TONES): 4 dots at half the pace, the same
+   sequence stretched to 1.6 s (48 ms between dots, fading for 176 ms). Every second cycle of the
+   active strips, both start together. */
+@keyframes led-seta-calm {
+  0% { opacity: 0.15; box-shadow: none; }
+  11%, 20% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; }
+  31%, 100% { opacity: 0.15; box-shadow: none; }
+}
+.dot-signals--calm .geo-dot { animation-name: led-seta-calm; animation-duration: 1600ms; }
+.dot-signals--calm .geo-dot:nth-child(2) { animation-delay: 48ms; }
+.dot-signals--calm .geo-dot:nth-child(3) { animation-delay: 96ms; }
+.dot-signals--calm .geo-dot:nth-child(4) { animation-delay: 144ms; }
 /* Like the Agenda Digital, LEDs respect the system's "reduce motion"; the user may ask the
    app to keep them blinking anyway (Configurações › Aparência sets data-leds="sempre"). */
 @media (prefers-reduced-motion: reduce) {
@@ -229,6 +241,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .signal-label { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.8rem; color: var(--muted); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-note { flex-basis: 100%; font-style: italic; }
 .agenda-legend { margin-bottom: 12px; }
 
 /* —— Agenda toolbar —— */
@@ -600,6 +613,62 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
     background-image: none;
   }
 }
+
+/* —— Depth (3D), pedido do usuário de 19/10 ——
+   Light from above, as on a real object: raised things have a bright top edge, a darker bottom edge
+   and a layered shadow (contact + soft); fields, the selected choice and the LED pills are sunk into
+   the surface; the LED dots are little bulbs with a highlight. Buttons and tabs look pressable (NN/g:
+   flat controls draw less attention and leave doubt about what can be clicked) and sink 1 px when
+   pressed. The shading stays on the edges, never under the words, so text keeps its contrast. */
+:root {
+  --depth-shade: 13, 34, 59;
+  --raise-1: 0 1px 1px rgba(var(--depth-shade), 0.08), 0 2px 4px rgba(var(--depth-shade), 0.08), 0 6px 14px rgba(var(--depth-shade), 0.08);
+  --raise-2: 0 1px 2px rgba(var(--depth-shade), 0.08), 0 6px 14px rgba(var(--depth-shade), 0.1), 0 18px 40px rgba(var(--depth-shade), 0.14);
+  --bevel: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(var(--depth-shade), 0.08);
+  --sunk: inset 0 2px 4px rgba(var(--depth-shade), 0.12), inset 0 1px 1px rgba(var(--depth-shade), 0.1), 0 1px 0 rgba(255, 255, 255, 0.8);
+  --btn-raise: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 1px 2px rgba(var(--depth-shade), 0.2), 0 4px 10px rgba(var(--depth-shade), 0.14);
+  --btn-press: inset 0 2px 4px rgba(0, 0, 0, 0.22), 0 1px 1px rgba(var(--depth-shade), 0.12);
+  --btn-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.06));
+  --light-raise: inset 0 1px 0 #fff, inset 0 -2px 0 rgba(var(--depth-shade), 0.08), 0 1px 2px rgba(var(--depth-shade), 0.14), 0 4px 10px rgba(var(--depth-shade), 0.1);
+  --light-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.5));
+  --sphere: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 60%);
+}
+/* Creme: warm shadows, as its --shadow. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --depth-shade: 90, 66, 20; }
+}
+:root[data-theme="dark"] { --depth-shade: 90, 66, 20; }
+
+/* Raised surfaces. */
+.card, .week-day, .legend { box-shadow: var(--bevel), var(--raise-1); }
+.side-card, .cal-wrap, .kpi { box-shadow: var(--bevel), var(--raise-2); }
+.dialog { box-shadow: var(--bevel), 0 8px 20px rgb(0 0 0 / 0.2), 0 30px 70px rgb(0 0 0 / 0.35); }
+.toast { box-shadow: var(--raise-2); }
+.session-bar { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 0 rgba(0, 0, 0, 0.2), 0 6px 18px rgba(var(--depth-shade), 0.3); }
+.weekday-row { background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 60%, rgba(0, 0, 0, 0.14)); }
+.day-cell { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75); }
+.entry-chip { box-shadow: var(--bevel), 0 1px 2px rgba(var(--depth-shade), 0.1), 0 3px 8px rgba(var(--depth-shade), 0.08); }
+
+/* Pressable controls: raised, glossy on top, sunk 1 px while pressed. */
+.btn:not(.btn--ghost), .tab.is-active, .segmented button.is-active { background-image: var(--btn-gloss); box-shadow: var(--btn-raise); }
+.btn.btn--secondary, .toolbar .btn--secondary, .agenda-bar .btn--secondary, .tab:not(.is-active), .btn-icon, .backup-pill { background-image: var(--light-gloss); box-shadow: var(--light-raise); }
+.btn.btn--secondary:hover, .toolbar .btn--secondary:hover, .agenda-bar .btn--secondary:hover, .tab:not(.is-active):hover, .btn-icon:hover, .backup-pill:hover { background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.15)); }
+.btn:not(.btn--ghost):active, .tab:active, .btn-icon:active, .backup-pill:active, .segmented button:active { transform: translateY(1px); box-shadow: var(--btn-press); }
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .tab, .btn-icon, .backup-pill, .segmented button { transition: transform 80ms ease-out, box-shadow 80ms ease-out, background-color 120ms; }
+}
+
+/* Sunk: fields, the track of the segmented control, the chosen option, the LED pills. */
+.input, .segmented { box-shadow: var(--sunk); }
+.choice { box-shadow: var(--bevel), 0 1px 2px rgba(var(--depth-shade), 0.1); }
+.choice:has(input:checked) { box-shadow: var(--sunk); }
+.dot-signals { box-shadow: inset 0 1px 2px rgba(var(--depth-shade), 0.18), 0 1px 0 rgba(255, 255, 255, 0.85); }
+.backup-pill .dot-signals { box-shadow: none; }
+.session-bar .dot-signals { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.15); }
+
+/* Rounded things: the LED bulbs, the day count, today's number. */
+.geo-dot { background-image: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 60%); }
+.count-badge, .day-cell.today .day-num { background-image: var(--sphere); box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(var(--depth-shade), 0.3); }
 
 @media print {
   .tabs, .toolbar, .agenda-bar .btn, .btn, .legend, .side-panel, #sessionBar, .pending-card { display: none !important; }
@@ -1750,6 +1819,10 @@ const SIGNAL = Object.freeze({
   CANCEL: 'cancel',
 });
 
+// Not confirmed (no record, payment open) or not active (cancelled, holiday, inactive patient, nothing
+// to charge, backup off): their LEDs have half the dots and blink at half the pace (styles.css).
+const CALM_TONES = Object.freeze([SIGNAL.YELLOW, SIGNAL.GRAY, SIGNAL.CANCEL]);
+
 // Same order as the Agenda Digital legend: alerts first.
 const SIGNAL_LEGEND = [
   [SIGNAL.RED, 'vermelho · falta'],
@@ -1819,7 +1892,7 @@ function daySignal(signals) {
   return calm ? [{ tone: calm, count: 1 }] : null;
 }
 
-return { SIGNAL, SIGNAL_LEGEND, attendanceSignal, paymentSignal, daySignal };
+return { SIGNAL, CALM_TONES, SIGNAL_LEGEND, attendanceSignal, paymentSignal, daySignal };
 })();
 modules["ui/dom.js"] = (() => {
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1887,30 +1960,31 @@ function parseMoneyInput(text) {
 return { h, svg, replaceChildren, formatMoney, formatPercent, formatInteger, parseMoneyInput };
 })();
 modules["ui/components.js"] = (() => {
-const { SIGNAL_LEGEND } = modules["domain/signals.js"];
+const { CALM_TONES, SIGNAL_LEGEND } = modules["domain/signals.js"];
 const { formatMonth } = modules["lib/dates.js"];
 const { h } = modules["ui/dom.js"];
 // Every LED is a strip of dots inside a gray outline, lit in sequence (styles.css): the pills of the
-// Agenda do André (its P1 has 8 dots), without the priority label.
+// Agenda do André (its P1 has 8 dots), without the priority label. What is not confirmed or not active
+// gets half the dots, blinking slower.
 const LED_DOTS = 8;
 
 /** The strip's dots shared among the colours, in order: one colour takes them all. */
-function stripTones(tones) {
-  const share = Math.floor(LED_DOTS / tones.length);
-  const extra = LED_DOTS % tones.length;
+function stripTones(tones, count) {
+  const share = Math.floor(count / tones.length);
+  const extra = count % tones.length;
   return tones.flatMap((tone, index) => Array(share + (index < extra ? 1 : 0)).fill(tone));
 }
 
-function ledStrip(tones, { label = '', className = '' }) {
+function ledStrip(tones, { label = '', className = '', calm = tones.every((tone) => CALM_TONES.includes(tone)) }) {
   return h(
     'span',
-    { class: `dot-signals ${className}`.trim(), title: label || null, 'aria-hidden': label ? null : 'true' },
-    stripTones(tones).map((tone) => h('span', { class: `geo-dot dot-signal--${tone}` })),
+    { class: ['dot-signals', calm ? 'dot-signals--calm' : '', className].filter(Boolean).join(' '), title: label || null, 'aria-hidden': label ? null : 'true' },
+    stripTones(tones, calm ? LED_DOTS / 2 : LED_DOTS).map((tone) => h('span', { class: `geo-dot dot-signal--${tone}` })),
   );
 }
 
-/** Geometric LED signal of one colour. */
-const signalDots = ({ tone, label = '' }, className = '') => ledStrip([tone], { label, className });
+/** Geometric LED signal of one colour; `calm` overrides the colour's rule (a running session is active). */
+const signalDots = ({ tone, label = '', calm }, className = '') => ledStrip([tone], { label, className, calm });
 
 /** Several LED colours in one strip (the merged signal of a day). */
 const signalGroup = (parts, className = '') => ledStrip(parts.map(({ tone }) => tone), { className });
@@ -1923,6 +1997,7 @@ function signalLegend() {
     'p',
     { class: 'legend', 'aria-label': 'Legenda dos sinais' },
     SIGNAL_LEGEND.map(([tone, label]) => h('span', { class: 'legend-item' }, signalDots({ tone }), label)),
+    h('span', { class: 'legend-note' }, '4 pontos, mais devagar: sem confirmação ou fora de atividade'),
   );
 }
 
@@ -8232,12 +8307,14 @@ return { renderPatients };
 modules["ui/led-sync.js"] = (() => {
 // Keeps every LED strip blinking in step, as in the Agenda do André: a strip drawn later (another view,
 // the session bar, the backup status) joins the cycle the others are in instead of starting its own.
+// led-seta (8 dots) and led-seta-calm (4 dots, half the pace).
 const LED_ANIMATION = 'led-seta';
 
 function alignLeds() {
   // getAnimations() applies pending styles first, so strips just added are included.
   document.getAnimations().forEach((animation) => {
-    if (animation.animationName === LED_ANIMATION && animation.startTime !== 0) animation.startTime = 0;
+    // CSS transitions are listed too, without an animation name.
+    if (animation.animationName?.startsWith(LED_ANIMATION) && animation.startTime !== 0) animation.startTime = 0;
   });
 }
 
@@ -8721,7 +8798,7 @@ function startSessionTimer(app) {
     return h(
       'div',
       { class: `session-bar session-bar--running${over ? ' session-bar--overtime' : ''}`, role: 'region', 'aria-label': 'Sessão em andamento' },
-      signalDots({ tone: over ? 'yellow' : 'green' }),
+      signalDots({ tone: over ? 'yellow' : 'green', calm: false }),
       h('span', { class: 'session-bar__text' }, 'Sessão de ', h('strong', {}, firstNameOf(timer.patientId)), ` · começou às ${clock(timer.startedAt)}`),
       digits,
       h('span', { class: 'session-bar__status' }, over ? `passou dos ${timer.minutes} min · continua contando` : `de ${timer.minutes} min`),
