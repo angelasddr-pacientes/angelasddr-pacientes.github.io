@@ -203,20 +203,20 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .dot-signal--blue { color: var(--dot-blue); }
 .dot-signal--gray { color: var(--dot-gray); }
 .dot-signal--cancel { color: var(--dot-cancel); }
-/* Few lights, each blinking like a Boeing's strobe (pedido do usuário, 19/10: "parecendo carnaval";
-   "todas as piscadas devem parecer com o tipo de piscada de um Boeing"): a single short flash that
-   snaps on, pops a little and dies away, then dark until the next one (Boeing wing strobes flash once;
-   Airbus ones twice). Off, a dot rests pale (15%).
+/* Few lights, blinking like aircraft strobes (pedidos do usuário, 19/10: "parecendo carnaval"; "com
+   2 leds, esquema Airbus; com 1 led, esquema Boeing"): Airbus wing strobes flash twice in quick
+   succession, Boeing ones once (spotting guides). Off, a dot rests pale (15%).
    Active, confirmed, paid (green, blue; a running session): 2 dots every 800 ms (75 a minute, inside the
-   40-100 of aviation anti-collision lights), lit left to right 40 ms apart, like the sequential turn
-   signal, so the pair reads as one flash sweeping right.
-   Slow (not confirmed or not active, and the alerts red and orange): 1 dot every 1.6 s, its flash
-   bursting like an explosion: a brighter pop whose glow spreads out and fades over 700 ms.
+   40-100 of aviation anti-collision lights), the Airbus double flash shared left to right, like the
+   sequential turn signal: the left dot flashes, the right one 120 ms later; each snaps on in about
+   25 ms and is gone by 175 ms, so the two flashes stay apart.
+   Slow (not confirmed or not active, and the alerts red and orange): 1 dot every 1.6 s, the Boeing single
+   flash, bursting like an explosion: a brighter pop whose glow spreads out and fades over 700 ms.
    Every 1.6 s all of them flash together (led-sync.js). */
 @keyframes led-strobe {
   0% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
-  5% { opacity: 1; transform: scale(1.2); box-shadow: 0 0 4px 1px currentColor; animation-timing-function: cubic-bezier(0.15, 0.6, 0.35, 1); }
-  38%, 100% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 9px 3px transparent; }
+  3% { opacity: 1; transform: scale(1.2); box-shadow: 0 0 4px 1px currentColor; animation-timing-function: cubic-bezier(0.15, 0.6, 0.35, 1); }
+  22%, 100% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 8px 3px transparent; }
 }
 @keyframes led-burst {
   0% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
@@ -224,7 +224,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
   45%, 100% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 16px 7px transparent; }
 }
 .dot-signals .geo-dot { animation: led-strobe 800ms linear infinite backwards; }
-.dot-signals .geo-dot:nth-child(2) { animation-delay: 40ms; }
+.dot-signals .geo-dot:nth-child(2) { animation-delay: 120ms; }
 .dot-signals--slow .geo-dot { animation-name: led-burst; animation-duration: 1600ms; }
 /* A slow strip with several colours (the day's alerts) flashes them one after the other. */
 .dot-signals--slow .geo-dot:nth-child(2) { animation-delay: 120ms; }
@@ -1965,8 +1965,9 @@ const { ALERT_TONES, CALM_TONES, SIGNAL_LEGEND } = modules["domain/signals.js"];
 const { formatMonth } = modules["lib/dates.js"];
 const { h } = modules["ui/dom.js"];
 // Every LED sits inside a gray outline (the pills of the Agenda do André, without the priority label) and
-// flashes like an aircraft strobe (styles.css). Few lights: what is active, confirmed or paid has 2 dots;
-// the slow ones (not confirmed, not active, the alerts red and orange) have 1 dot per colour.
+// flashes like an aircraft strobe (styles.css). Few lights: what is active, confirmed or paid has 2 dots
+// (Airbus double flash); the slow ones (not confirmed, not active, the alerts red and orange) have 1 dot
+// per colour (Boeing single flash).
 const ACTIVE_DOTS = 2;
 
 const isSlow = (tone) => CALM_TONES.includes(tone) || ALERT_TONES.includes(tone);
