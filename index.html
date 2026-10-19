@@ -194,8 +194,6 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .dot-signal--blue { color: var(--dot-blue); }
 .dot-signal--gray { color: var(--dot-gray); }
 .dot-signal--cancel { color: var(--dot-cancel); }
-/* Calendar: compact LEDs, as in the Agenda's day cells. */
-.day-cell, .week-day__marks { --dot-size: 4px; }
 /* The Agenda's appointment LEDs (05/10): every 800 ms the dots light up from left to right, one step
    (24 ms = 3%) apart, each fading in 88 ms (11%) and glowing; once the last is lit, they go out in the
    same order, fading 88 ms; pale in between. Keyframes for 2 dots are the Agenda's (cdot2_*); 1 and 3
