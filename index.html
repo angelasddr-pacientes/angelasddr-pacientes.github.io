@@ -328,6 +328,13 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 /* Larger targets for touch and for older eyes (at least 44 px high). */
 .setup-list .input, .setup-list .btn, .setup-block .input, .setup-block .btn { min-height: 44px; font-size: 1rem; }
 .setup-slot .input { min-width: 9rem; }
+.setup-slot .input--money { min-width: 7rem; width: 8rem; }
+.setup-slot__note { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; }
+.fee-note { margin: 0; font-size: 0.95rem; color: var(--muted); }
+.fee-note strong { color: var(--text); }
+.fee-note[hidden] { display: none; }
+.reschedule-from { margin: 0; font-size: 1.05rem; }
+.today-row__note, .line-note { display: block; font-size: 0.9rem; font-weight: 500; color: var(--muted); }
 
 /* —— Session bar: today's sessions, or the running session with its timer (as the Agenda's
    active-timer banner: opaque navy, light-blue digits, a blinking LED) —— */
@@ -597,6 +604,18 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
   /* On paper a blinking LED would come out at whatever brightness it had at that instant. */
   .dot-signal .geo-dot { animation: none !important; opacity: 1; }
 }
+/* Problems next to the field they are about, and the live check of a day and time (Agendar, Remarcar). */
+.field-error { margin: 2px 0 0; color: var(--danger); font-size: 0.95rem; font-weight: 600; }
+.field--error .input, .field--error select { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.slot-check { border-radius: var(--radius-sm); padding: 10px 14px; font-size: 1rem; display: flex; flex-direction: column; gap: 6px; }
+.slot-check[hidden] { display: none; }
+.slot-check p { margin: 0; }
+.slot-check--free { background: color-mix(in srgb, var(--verde) 10%, var(--card)); color: var(--verde); font-weight: 600; }
+.slot-check--taken { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
+.slot-check__label { color: var(--text); font-weight: 500; }
+.slot-check__times { display: flex; flex-wrap: wrap; gap: 8px; }
+.slot-check__times .btn, .slot-check > .btn { min-height: 44px; font-size: 1rem; }
+.slot-check > .btn { align-self: flex-start; }
 </style>
 </head>
 <body>
@@ -922,10 +941,21 @@ function withWeeklyCount(schedule, count, workDays) {
 
 /**
  * The patient after scheduling with a repetition: the chosen days and times become the patient's
- * fixed days (replacing the previous ones), with `frequency` for all of them, from `from` on.
+ * fixed days, with `frequency` for all of them, from `from` on. The days they replace are kept
+ * for the dates before `from` (`previousSchedules`), so the sessions expected back then, and
+ * never recorded, still show up.
  */
 function withFixedDays(patient, { days, from, frequency }) {
-  return { ...patient, schedule: days.map(({ weekday, time }) => ({ weekday, time })), frequency, scheduleInferred: false, scheduleStart: from };
+  const kept = (patient.previousSchedules ?? []).filter((period) => !period.start || period.start < from).map((period) => ({ ...period, until: [period.until, from].sort()[0] }));
+  const replaced = patient.schedule?.length && (!patient.scheduleStart || patient.scheduleStart < from) ? [{ schedule: patient.schedule, frequency: patient.frequency, start: patient.scheduleStart ?? null, until: from }] : [];
+  return {
+    ...patient,
+    schedule: days.map(({ weekday, time }) => ({ weekday, time })),
+    frequency,
+    scheduleInferred: false,
+    scheduleStart: from,
+    previousSchedules: [...kept, ...replaced],
+  };
 }
 
 function isActivePatient(patient, lastSessionDate, today) {
@@ -1337,10 +1367,11 @@ const isLateNotice = (notice, noticeHours, thresholdHours) =>
 /**
  * Fee suggested for a session under the clinic's absence policy: attended sessions and
  * absences notified late (or not notified) are charged; timely cancellations are not.
+ * The base is the value agreed for that session, when there is one, else the patient's value.
  * It is only a suggestion — the fee field stays editable.
  */
-function suggestedFee({ status, notice = null, noticeHours = null }, patient, settings) {
-  const fee = patient?.defaultFee ?? null;
+function suggestedFee({ status, notice = null, noticeHours = null, agreedFee = null }, patient, settings) {
+  const fee = agreedFee ?? patient?.defaultFee ?? null;
   const threshold = settings.chargeAbsenceNoticeHours;
   switch (status) {
     case ATTENDANCE.SCHEDULED:
@@ -1366,8 +1397,119 @@ function noticeHoursBefore(noticeAt, date, time) {
 
 return { isLateNotice, suggestedFee, noticeHoursBefore };
 })();
+modules["domain/mutations.js"] = (() => {
+// Pure dataset transitions. Each returns a new dataset and never mutates its input.
+const { monthOf } = modules["lib/dates.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+const newId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
+
+const replaceById = (items, item) =>
+  items.some((existing) => existing.id === item.id)
+    ? items.map((existing) => (existing.id === item.id ? item : existing))
+    : [...items, item];
+
+/** Where a session made in the system comes from (the spreadsheet's say where they were in it). */
+const SYSTEM_SOURCE = 'Registrado no sistema';
+
+function newSession(fields) {
+  return {
+    id: newId('s'),
+    patientId: '',
+    date: '',
+    status: ATTENDANCE.PRESENT,
+    rawStatus: '',
+    fee: null,
+    paid: false,
+    paidOn: null,
+    notice: null,
+    noticeHours: null,
+    punctuality: null,
+    lateMinutes: null,
+    note: '',
+    // Value agreed for this session only (null: the patient's value), and why it differs.
+    agreedFee: null,
+    feeReason: '',
+    // Where the session was before being moved ({ date, time }), and why it moved.
+    movedFrom: null,
+    moveReason: '',
+    source: SYSTEM_SOURCE,
+    ...fields,
+  };
+}
+
+const saveSession = (dataset, session) => ({ ...dataset, sessions: replaceById(dataset.sessions, session) });
+
+const deleteSession = (dataset, sessionId) => ({
+  ...dataset,
+  sessions: dataset.sessions.filter((session) => session.id !== sessionId),
+});
+
+/**
+ * The value agreed for one session of a fixed day (the next one): the session on `date` gets it,
+ * created as scheduled when it was only expected. The patient's own value stays as it is.
+ */
+function withAgreedFee(dataset, { patientId, date, time, fee, reason }) {
+  const existing = dataset.sessions.find((session) => session.patientId === patientId && session.date === date);
+  const base = existing ?? newSession({ patientId, date, time, status: ATTENDANCE.SCHEDULED });
+  return saveSession(dataset, { ...base, time: base.time || time, fee, agreedFee: fee, feeReason: reason });
+}
+
+/**
+ * One session moved to another date or time; the patient's fixed days stay. `movedFrom` keeps
+ * where it was first expected, so that day stops showing it. Moving it back clears the move.
+ */
+function moveSession(dataset, session, { date, time, reason }) {
+  const origin = session.movedFrom ?? { date: session.date, time: session.time ?? '' };
+  const back = origin.date === date && origin.time === time;
+  return saveSession(dataset, { ...session, date, time, movedFrom: back ? null : origin, moveReason: back ? '' : reason });
+}
+
+const savePatient = (dataset, patient) => ({ ...dataset, patients: replaceById(dataset.patients, patient) });
+
+function newPayment(fields) {
+  return { id: newId('g'), patientId: '', date: '', amount: 0, bank: '', reference: '', source: 'Registrado no sistema', ...fields };
+}
+
+/**
+ * Records a payment and marks the sessions it settles as paid — the charged sessions of
+ * `settledMonth` and/or the listed `sessionIds` — so the per-session control matches the cash.
+ */
+function registerPayment(dataset, payment, { settledMonth = null, sessionIds = [] } = {}) {
+  const ids = new Set(sessionIds);
+  const settles = (session) =>
+    session.patientId === payment.patientId &&
+    session.fee > 0 &&
+    (ids.has(session.id) || (settledMonth && monthOf(session.date) === settledMonth));
+  return {
+    ...dataset,
+    payments: [...dataset.payments, payment],
+    sessions: dataset.sessions.map((session) =>
+      settles(session) && !session.paid ? { ...session, paid: true, paidOn: payment.date } : session,
+    ),
+  };
+}
+
+const deletePayment = (dataset, paymentId) => ({
+  ...dataset,
+  payments: dataset.payments.filter((payment) => payment.id !== paymentId),
+});
+
+const receiptKey = (patientId, month) => `${patientId}|${month}`;
+
+function setReceiptIssued(dataset, patientId, month, issuedOn) {
+  const receipts = { ...dataset.receipts };
+  if (issuedOn) receipts[receiptKey(patientId, month)] = issuedOn;
+  else delete receipts[receiptKey(patientId, month)];
+  return { ...dataset, receipts };
+}
+
+const saveSettings = (dataset, settings) => ({ ...dataset, settings: { ...dataset.settings, ...settings } });
+
+return { SYSTEM_SOURCE, newSession, saveSession, deleteSession, withAgreedFee, moveSession, savePatient, newPayment, registerPayment, deletePayment, receiptKey, setReceiptIssued, saveSettings };
+})();
 modules["domain/schedule.js"] = (() => {
-const { daysBetween, eachDay, minutesOf, timeOf, weekdayIndex } = modules["lib/dates.js"];
+const { addDaysIso, daysBetween, eachDay, isTime, minutesOf, timeOf, weekdayIndex } = modules["lib/dates.js"];
+const { SYSTEM_SOURCE } = modules["domain/mutations.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
 const ENTRY_KIND = Object.freeze({
   RECORDED: 'registrada', // a session exists for this patient and date
@@ -1395,10 +1537,30 @@ function scheduledSlotsOn(patient, date) {
 
 const slotTime = (patient, date) => scheduledSlotsOn(patient, date)[0]?.time ?? '';
 
+/** The fixed days each period of the patient had: earlier ones until they were replaced, then the current ones. */
+const schedulePeriods = (patient) => [
+  ...(patient.previousSchedules ?? []).map((period) => ({ schedule: period.schedule, frequency: period.frequency, scheduleStart: period.start, until: period.until })),
+  { schedule: patient.schedule ?? [], frequency: patient.frequency, scheduleStart: patient.scheduleStart, until: null },
+];
+
+/**
+ * The day after which the agenda expects the patient's sessions (exclusive). The spreadsheet is
+ * history: after its last session, the system's records rule, and a session recorded in the
+ * system never hides the expected ones before it, still unrecorded (the user's decision). A
+ * patient with no spreadsheet session starts at the schedule's start or, without one, at the
+ * first session recorded in the system (today when there is none), so no phantom past shows up.
+ */
+function expectedAfter(patient, sessions, today) {
+  const happened = sessions.filter((session) => session.date <= today && session.status !== ATTENDANCE.SCHEDULED);
+  const imported = happened.filter((session) => session.source !== SYSTEM_SOURCE);
+  if (imported.length) return imported.at(-1).date;
+  if (patient.scheduleStart || patient.previousSchedules?.length) return '';
+  return addDaysIso(sessions[0]?.date && sessions[0].date < today ? sessions[0].date : today, -1);
+}
+
 /**
  * Everything on the agenda between `from` and `to`: recorded sessions plus the appointments the
- * weekly schedules of active patients expect. Expected appointments only start after the
- * patient's last recorded session up to today, so the imported history is not flagged.
+ * weekly schedules of active patients expect (from `expectedAfter` on).
  */
 function buildAgenda(dataset, indexes, { from, to }, today) {
   const entries = dataset.sessions
@@ -1408,21 +1570,60 @@ function buildAgenda(dataset, indexes, { from, to }, today) {
       return { date: session.date, time: session.time || slotTime(patient, session.date), patientId: session.patientId, session, kind: ENTRY_KIND.RECORDED };
     });
   const recordedKeys = new Set(entries.map((entry) => `${entry.patientId}|${entry.date}`));
+  // A session moved to another day takes its expected appointment with it, wherever it went.
+  dataset.sessions
+    .filter((session) => session.movedFrom?.date >= from && session.movedFrom.date <= to)
+    .forEach((session) => recordedKeys.add(`${session.patientId}|${session.movedFrom.date}`));
 
   dataset.patients
-    .filter((patient) => indexes.activeIds.has(patient.id) && patient.schedule?.length)
+    .filter((patient) => indexes.activeIds.has(patient.id) && (patient.schedule?.length || patient.previousSchedules?.length))
     .forEach((patient) => {
-      const lastPast = (indexes.sessionsByPatient.get(patient.id) ?? []).filter((s) => s.date <= today).at(-1)?.date ?? '';
-      const firstDay = [from, patient.scheduleStart ?? ''].sort().at(-1);
-      eachDay(firstDay, to)
-        .filter((date) => date > lastPast && !recordedKeys.has(`${patient.id}|${date}`))
-        .forEach((date) =>
-          scheduledSlotsOn(patient, date).forEach((slot) =>
-            entries.push({ date, time: slot.time, patientId: patient.id, session: null, kind: date < today ? ENTRY_KIND.PENDING : ENTRY_KIND.EXPECTED }),
-          ),
-        );
+      const lastPast = expectedAfter(patient, indexes.sessionsByPatient.get(patient.id) ?? [], today);
+      schedulePeriods(patient).forEach((period) => {
+        const firstDay = [from, period.scheduleStart ?? ''].sort().at(-1);
+        const lastDay = period.until ? [to, addDaysIso(period.until, -1)].sort()[0] : to;
+        if (firstDay > lastDay) return;
+        eachDay(firstDay, lastDay)
+          .filter((date) => date > lastPast && !recordedKeys.has(`${patient.id}|${date}`))
+          .forEach((date) =>
+            scheduledSlotsOn(period, date).forEach((slot) =>
+              entries.push({ date, time: slot.time, patientId: patient.id, session: null, kind: date < today ? ENTRY_KIND.PENDING : ENTRY_KIND.EXPECTED }),
+            ),
+          );
+      });
     });
   return entries.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '99').localeCompare(b.time || '99'));
+}
+
+const NEXT_SLOT_SEARCH_DAYS = 63;
+
+/**
+ * The date of the next session of the patient's fixed day on `weekday`, from `from` on: the first
+ * day the schedule expects it that has no session already decided (or moved away). Null when
+ * the schedule does not expect it in the next weeks.
+ */
+function nextSlotDate(patient, sessions, weekday, from) {
+  const taken = (date) =>
+    sessions.some((session) => session.patientId === patient.id && (session.date === date ? session.status !== ATTENDANCE.SCHEDULED : session.movedFrom?.date === date));
+  for (let offset = 0; offset < NEXT_SLOT_SEARCH_DAYS; offset += 1) {
+    const date = addDaysIso(from, offset);
+    if (scheduledSlotsOn(patient, date).some((slot) => slot.weekday === weekday) && !taken(date)) return date;
+  }
+  return null;
+}
+
+/**
+ * The patient's last attended session on `weekday` before `before`, at `time`. Sessions from the
+ * spreadsheet have no time: for them the weekday alone decides.
+ */
+function lastAttendedAt(sessions, { weekday, time, before }) {
+  return (
+    sessions
+      .filter((session) => session.status === ATTENDANCE.PRESENT && session.date < before && weekdayIndex(session.date) === weekday)
+      .filter((session) => !session.time || !time || session.time === time)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .at(-1) ?? null
+  );
 }
 
 const frees = (entry) => Boolean(entry.session && FREED_STATUSES.has(entry.session.status));
@@ -1451,6 +1652,51 @@ function freeSlots(date, dayEntries, settings, fromMinutes = 0) {
     cursor = Math.max(cursor, end);
   });
   return gaps;
+}
+
+/**
+ * Other patients' appointments that a session of `patientId` starting at `time` would run into
+ * (same day entries). Appointments without a time, or freed (cancelled, no session), never do.
+ */
+function overlappingEntries(dayEntries, { time, patientId }, settings) {
+  if (!isTime(time)) return [];
+  const start = minutesOf(time);
+  const end = start + settings.sessionMinutes;
+  return dayEntries.filter(
+    (entry) => entry.patientId !== patientId && occupiesSlot(entry) && minutesOf(entry.time) < end && minutesOf(entry.time) + settings.sessionMinutes > start,
+  );
+}
+
+const SUGGESTION_STEP = 30;
+
+/**
+ * Free start times on `date` for a session of `patientId`, on the hour or half hour, the `limit`
+ * nearest to `near` (in time order). The patient's own appointments that day do not count:
+ * the new one takes their place.
+ */
+function freeStartTimes(date, dayEntries, settings, { patientId, near = null, fromMinutes = 0, limit = 4 }) {
+  const others = dayEntries.filter((entry) => entry.patientId !== patientId);
+  const starts = freeSlots(date, others, settings, fromMinutes).flatMap((slot) => {
+    const times = [];
+    for (let t = Math.ceil(minutesOf(slot.start) / SUGGESTION_STEP) * SUGGESTION_STEP; t + settings.sessionMinutes <= minutesOf(slot.end); t += SUGGESTION_STEP) times.push(t);
+    return times;
+  });
+  const target = isTime(near) ? minutesOf(near) : starts[0] ?? 0;
+  return starts
+    .sort((a, b) => Math.abs(a - target) - Math.abs(b - target) || a - b)
+    .slice(0, limit)
+    .sort((a, b) => a - b)
+    .map(timeOf);
+}
+
+/** The next `count` dates on which the patient's schedule expects a session on `weekday`, from `from` on. */
+function slotDates(patient, weekday, from, count) {
+  const dates = [];
+  for (let offset = 0; dates.length < count && offset < NEXT_SLOT_SEARCH_DAYS * 2; offset += 1) {
+    const date = addDaysIso(from, offset);
+    if (scheduledSlotsOn(patient, date).some((slot) => slot.weekday === weekday)) dates.push(date);
+  }
+  return dates;
 }
 
 const freeCapacity = (slots) => slots.reduce((total, slot) => total + slot.capacity, 0);
@@ -1482,7 +1728,7 @@ function scheduleGaps(patients, activeIds) {
 /** When a session starts and ends ("14:00–14:50"), from its start time and the session length; '' without a time. */
 const sessionTimeRange = (time, settings) => (time ? `${time}–${timeOf(minutesOf(time) + settings.sessionMinutes)}` : '');
 
-return { ENTRY_KIND, scheduledSlotsOn, buildAgenda, freeSlots, freeCapacity, dayVacancies, scheduleGaps, sessionTimeRange };
+return { ENTRY_KIND, scheduledSlotsOn, buildAgenda, nextSlotDate, lastAttendedAt, freeSlots, overlappingEntries, freeStartTimes, slotDates, freeCapacity, dayVacancies, scheduleGaps, sessionTimeRange };
 })();
 modules["domain/signals.js"] = (() => {
 const { isLateNotice } = modules["domain/billing-policy.js"];
@@ -1787,87 +2033,6 @@ function toast(message, tone = 'success') {
 }
 
 return { signalDots, signalGroup, signalLabel, signalLegend, button, kpiCard, card, emptyState, pageHeader, sectionTitle, field, select, table, periodPicker, periodLabel, openDialog, toast };
-})();
-modules["domain/mutations.js"] = (() => {
-// Pure dataset transitions. Each returns a new dataset and never mutates its input.
-const { monthOf } = modules["lib/dates.js"];
-const { ATTENDANCE } = modules["domain/status.js"];
-const newId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
-
-const replaceById = (items, item) =>
-  items.some((existing) => existing.id === item.id)
-    ? items.map((existing) => (existing.id === item.id ? item : existing))
-    : [...items, item];
-
-function newSession(fields) {
-  return {
-    id: newId('s'),
-    patientId: '',
-    date: '',
-    status: ATTENDANCE.PRESENT,
-    rawStatus: '',
-    fee: null,
-    paid: false,
-    paidOn: null,
-    notice: null,
-    noticeHours: null,
-    punctuality: null,
-    lateMinutes: null,
-    note: '',
-    source: 'Registrado no sistema',
-    ...fields,
-  };
-}
-
-const saveSession = (dataset, session) => ({ ...dataset, sessions: replaceById(dataset.sessions, session) });
-
-const deleteSession = (dataset, sessionId) => ({
-  ...dataset,
-  sessions: dataset.sessions.filter((session) => session.id !== sessionId),
-});
-
-const savePatient = (dataset, patient) => ({ ...dataset, patients: replaceById(dataset.patients, patient) });
-
-function newPayment(fields) {
-  return { id: newId('g'), patientId: '', date: '', amount: 0, bank: '', reference: '', source: 'Registrado no sistema', ...fields };
-}
-
-/**
- * Records a payment and marks the sessions it settles as paid — the charged sessions of
- * `settledMonth` and/or the listed `sessionIds` — so the per-session control matches the cash.
- */
-function registerPayment(dataset, payment, { settledMonth = null, sessionIds = [] } = {}) {
-  const ids = new Set(sessionIds);
-  const settles = (session) =>
-    session.patientId === payment.patientId &&
-    session.fee > 0 &&
-    (ids.has(session.id) || (settledMonth && monthOf(session.date) === settledMonth));
-  return {
-    ...dataset,
-    payments: [...dataset.payments, payment],
-    sessions: dataset.sessions.map((session) =>
-      settles(session) && !session.paid ? { ...session, paid: true, paidOn: payment.date } : session,
-    ),
-  };
-}
-
-const deletePayment = (dataset, paymentId) => ({
-  ...dataset,
-  payments: dataset.payments.filter((payment) => payment.id !== paymentId),
-});
-
-const receiptKey = (patientId, month) => `${patientId}|${month}`;
-
-function setReceiptIssued(dataset, patientId, month, issuedOn) {
-  const receipts = { ...dataset.receipts };
-  if (issuedOn) receipts[receiptKey(patientId, month)] = issuedOn;
-  else delete receipts[receiptKey(patientId, month)];
-  return { ...dataset, receipts };
-}
-
-const saveSettings = (dataset, settings) => ({ ...dataset, settings: { ...dataset.settings, ...settings } });
-
-return { newSession, saveSession, deleteSession, savePatient, newPayment, registerPayment, deletePayment, receiptKey, setReceiptIssued, saveSettings };
 })();
 modules["domain/parsing/cells.js"] = (() => {
 const { stripAccents } = modules["lib/text.js"];
@@ -4653,6 +4818,124 @@ function renderSettings(app) {
 
 return { renderImport, renderSettings };
 })();
+modules["ui/form-parts.js"] = (() => {
+// Pieces shared by the forms: patient choice, texts, actions and where problems are shown.
+const { WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { button, select } = modules["ui/components.js"];
+const { h } = modules["ui/dom.js"];
+const patientOptions = (app) =>
+  [...app.dataset.patients]
+    .sort((a, b) => Number(app.indexes.activeIds.has(b.id)) - Number(app.indexes.activeIds.has(a.id)) || a.name.localeCompare(b.name, 'pt-BR'))
+    .map((patient) => [patient.id, app.indexes.activeIds.has(patient.id) ? patient.name : `${patient.name} (inativo)`]);
+
+// Without a patient chosen yet, the list starts with "Escolha o paciente…": a select with no match
+// looks as if its first patient were chosen, and "Salvar" then says none is.
+const patientChoice = (app, value, props = {}) => select([...(value ? [] : [['', 'Escolha o paciente…']]), ...patientOptions(app)], { value, ...props });
+
+const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((name, index) => [String(index), name]);
+
+/** "a", "a e b", "a, b e c". */
+const listText = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} e ${items.at(-1)}` : items.join(''));
+
+const fixedDaysText = (patient) =>
+  patient.schedule.length ? listText(patient.schedule.map((slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()} ${slot.time ? `às ${slot.time}` : '(sem horário)'}`)) : 'nenhum';
+
+const numberOrNull = (text) => (String(text).trim() === '' ? null : Number(text));
+const moneyText = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
+
+function formActions(onCancel, extra = null) {
+  return h('div', { class: 'form-actions' }, extra, h('span', { class: 'spacer' }), button('Cancelar', { variant: 'secondary', onClick: onCancel }), button('Salvar', { type: 'submit' }));
+}
+
+/** The form's problems in a list at its top (forms short enough to see it). */
+function showErrors(form, errors) {
+  form.querySelector('.form-errors')?.remove();
+  if (errors.length) form.prepend(h('div', { class: 'form-errors', role: 'alert' }, errors.map((error) => h('p', {}, error))));
+  return errors.length === 0;
+}
+
+/**
+ * A problem said right below the field it is about ('' clears it), so it is seen where it is fixed
+ * and never outlives the fix (NN/g, error messages next to their source). Returns whether there is one.
+ */
+function fieldMessage(container, message) {
+  container.querySelector(':scope > .field-error')?.remove();
+  container.classList.toggle('field--error', Boolean(message));
+  if (message) container.append(h('p', { class: 'field-error', role: 'alert' }, message));
+  return Boolean(message);
+}
+
+/** Clears a field's message as soon as it is changed. */
+const clearOnChange = (container, control) => control.addEventListener('input', () => fieldMessage(container, ''));
+
+/** After "Salvar" finds problems: the first one in view, with the focus on what fixes it. */
+function firstProblemInView(form) {
+  const first = form.querySelector('.field--error, .slot-check--taken');
+  if (!first) return;
+  first.scrollIntoView({ block: 'center' });
+  first.querySelector('input, select, button')?.focus({ preventScroll: true });
+}
+
+return { patientChoice, WEEKDAY_OPTIONS, listText, fixedDaysText, numberOrNull, moneyText, formActions, showErrors, fieldMessage, clearOnChange, firstProblemInView };
+})();
+modules["domain/session-timer.js"] = (() => {
+const { minutesOf } = modules["lib/dates.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+// The session timer: it starts when the psychologist says so, shows how long the session has run,
+// warns once at its nominal length and keeps counting until she stops it. It never starts by itself
+// and cannot be set back: it counts from the moment she started it.
+
+const MS_PER_MINUTE = 60_000;
+
+/** Identifies an agenda appointment across re-renders and reloads. */
+const appointmentKey = (entry) => `${entry.date}|${entry.patientId}|${entry.time ?? ''}`;
+
+/** An appointment that can still take place: not yet attended, missed or cancelled. */
+const isOpenAppointment = (entry) => !entry.session || entry.session.status === ATTENDANCE.SCHEDULED;
+
+/**
+ * The appointment to ask about now: today's, open, with a time that has come and a nominal length
+ * that has not run out yet, and not asked about before. Entries come sorted by time.
+ */
+function dueAppointment(entries, { today, nowMinutes, sessionMinutes, asked }) {
+  return (
+    entries.find((entry) => {
+      if (entry.date !== today || !entry.time || !isOpenAppointment(entry) || asked.has(appointmentKey(entry))) return false;
+      const start = minutesOf(entry.time);
+      return nowMinutes >= start && nowMinutes < start + sessionMinutes;
+    }) ?? null
+  );
+}
+
+function startTimer(entry, now, sessionMinutes) {
+  return { key: appointmentKey(entry), patientId: entry.patientId, date: entry.date, time: entry.time ?? '', startedAt: now, minutes: sessionMinutes, endNoticeShown: false };
+}
+
+const elapsedMs = (timer, now) => Math.max(0, now - timer.startedAt);
+
+const isOvertime = (timer, now) => elapsedMs(timer, now) >= timer.minutes * MS_PER_MINUTE;
+
+/** Whole minutes past the nominal length (0 before it). */
+const overtimeMinutes = (timer, now) => Math.max(0, Math.floor((elapsedMs(timer, now) - timer.minutes * MS_PER_MINUTE) / MS_PER_MINUTE));
+
+/** "05:07", or "1:02:07" from one hour on. */
+function formatElapsed(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return hours ? `${hours}:${minutes}:${seconds}` : `${minutes}:${seconds}`;
+}
+
+/** "56 min" or "1 h 05 min", for messages. */
+function formatDuration(ms) {
+  const totalMinutes = Math.floor(ms / MS_PER_MINUTE);
+  const hours = Math.floor(totalMinutes / 60);
+  return hours ? `${hours} h ${String(totalMinutes % 60).padStart(2, '0')} min` : `${totalMinutes} min`;
+}
+
+return { appointmentKey, isOpenAppointment, dueAppointment, startTimer, elapsedMs, isOvertime, overtimeMinutes, formatElapsed, formatDuration };
+})();
 modules["ui/weekly-count.js"] = (() => {
 const { MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount } = modules["domain/patients.js"];
 const { WEEKDAY_NAMES } = modules["lib/dates.js"];
@@ -4691,25 +4974,21 @@ function weeklyCountControl(app, patient, save) {
 
 return { confirmDroppedSlots, countStepper, weeklyCountControl };
 })();
-modules["ui/forms.js"] = (() => {
-const { noticeHoursBefore, suggestedFee } = modules["domain/billing-policy.js"];
-const { deletePayment, deleteSession, newPayment, newSession, registerPayment, savePatient, saveSession } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText, withFixedDays, withWeeklyCount } = modules["domain/patients.js"];
-const { ATTENDANCE, ATTENDANCE_LABELS, NOTICE_LABELS, PUNCTUALITY, PUNCTUALITY_LABELS } = modules["domain/status.js"];
-const { scheduledSlotsOn } = modules["domain/schedule.js"];
-const { formatDate, formatMonth, isIsoDate, isTime, monthOf, WEEKDAY_NAMES, weekdayIndex } = modules["lib/dates.js"];
+modules["ui/scheduling-form.js"] = (() => {
+// "Agendar / encaixe" and "Remarcar". While they are filled in, the chosen day and time are checked
+// against the agenda: "Horário livre", or who is there and the nearest free times to tap
+// (NN/g: prevent the slip with suggestions; say each problem next to what fixes it, in plain words).
+const { moveSession, newSession, savePatient, saveSession, withAgreedFee } = modules["domain/mutations.js"];
+const { withFixedDays, withWeeklyCount } = modules["domain/patients.js"];
+const { buildAgenda, freeStartTimes, lastAttendedAt, nextSlotDate, overlappingEntries, slotDates } = modules["domain/schedule.js"];
+const { isOpenAppointment } = modules["domain/session-timer.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+const { formatDate, formatDateLong, isIsoDate, isTime, minutesOf, timeOf, WEEKDAY_NAMES, weekdayIndex } = modules["lib/dates.js"];
 const { button, field, openDialog, select, toast } = modules["ui/components.js"];
 const { formatMoney, h, parseMoneyInput, replaceChildren } = modules["ui/dom.js"];
+const { clearOnChange, fieldMessage, firstProblemInView, fixedDaysText, formActions, listText, moneyText, patientChoice, WEEKDAY_OPTIONS } = modules["ui/form-parts.js"];
 const { countStepper } = modules["ui/weekly-count.js"];
-const { describeCell } = modules["lib/text.js"];
-const optionsOf = (labels, emptyLabel = null) => [...(emptyLabel ? [['', emptyLabel]] : []), ...Object.entries(labels)];
-
-const patientOptions = (app) =>
-  [...app.dataset.patients]
-    .sort((a, b) => Number(app.indexes.activeIds.has(b.id)) - Number(app.indexes.activeIds.has(a.id)) || a.name.localeCompare(b.name, 'pt-BR'))
-    .map((patient) => [patient.id, app.indexes.activeIds.has(patient.id) ? patient.name : `${patient.name} (inativo)`]);
-
-// "Repete?" when scheduling: large choices instead of a dropdown (harder for older hands, NN/g).
+// "Repete?": large choices instead of a dropdown (harder for older hands, NN/g).
 const REPEAT_OPTIONS = [
   ['', 'Só esta vez (encaixe)', ''],
   ['semanal', 'Toda semana', 'toda semana'],
@@ -4726,39 +5005,547 @@ function repeatChoices(onChange) {
   };
 }
 
-const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((name, index) => [String(index), name]);
+const LINE_CHECK_WEEKS = 4;
 
-/** "a", "a e b", "a, b e c". */
-const listText = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} e ${items.at(-1)}` : items.join(''));
+const weekdayLower = (date) => WEEKDAY_NAMES[weekdayIndex(date)].toLowerCase();
+/** "segunda, 20/10/2026". */
+const dayAndDate = (date) => `${weekdayLower(date)}, ${formatDate(date)}`;
+const shortDate = (date) => formatDate(date).slice(0, 5);
+const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1);
+const isWeekend = (weekday) => weekday === 0 || weekday === 6;
+/** "na segunda", "no sábado". */
+const onWeekday = (weekday) => `${isWeekend(weekday) ? 'no' : 'na'} ${WEEKDAY_NAMES[weekday].toLowerCase()}`;
+/** "nas próximas segundas", "nos próximos sábados". */
+const nextWeekdays = (weekday) => `${isWeekend(weekday) ? 'nos próximos' : 'nas próximas'} ${WEEKDAY_NAMES[weekday].toLowerCase()}s`;
+const rangeText = (time, settings) => `${time} às ${timeOf(minutesOf(time) + settings.sessionMinutes)}`;
+const hasValue = (fee) => fee !== null && fee !== undefined;
 
-const fixedDaysText = (patient) =>
-  patient.schedule.length ? listText(patient.schedule.map((slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()} ${slot.time ? `às ${slot.time}` : '(sem horário)'}`)) : 'nenhum';
+/** A value other than the patient's (in the patient's record). Without a value there, any value is. */
+const differsFromPatient = (fee, patient) => hasValue(fee) && !Number.isNaN(fee) && fee !== (patient?.defaultFee ?? null);
+// The reason is asked only against a value in the patient's record: without one there is nothing to differ from.
+const needsFeeReason = (fee, patient) => hasValue(patient?.defaultFee) && differsFromPatient(fee, patient);
 
-// Without a patient chosen yet, the list starts with "Escolha o paciente…": a select with no match
-// looks as if its first patient were chosen, and "Salvar" then says none is.
-const patientChoice = (app, value, props = {}) => select([...(value ? [] : [['', 'Escolha o paciente…']]), ...patientOptions(app)], { value, ...props });
-
-const numberOrNull = (text) => (String(text).trim() === '' ? null : Number(text));
-const moneyText = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
-
-function formActions(onCancel, extra = null) {
-  return h('div', { class: 'form-actions' }, extra, h('span', { class: 'spacer' }), button('Cancelar', { variant: 'secondary', onClick: onCancel }), button('Salvar', { type: 'submit' }));
+/**
+ * What to base a session's value on: the patient's value and, when the last attended session on
+ * that weekday (and time) had another one, that value and why (the reason typed with it, or the
+ * spreadsheet's note).
+ */
+function feeBasisText(app, patient, { weekday, time, before }) {
+  const base = hasValue(patient.defaultFee) ? `Cadastro: ${formatMoney(patient.defaultFee)}.` : 'Sem valor no cadastro.';
+  const last = lastAttendedAt(app.indexes.sessionsByPatient.get(patient.id) ?? [], { weekday, time, before });
+  if (!last || !hasValue(last.fee) || last.fee === patient.defaultFee) return base;
+  const reason = last.feeReason || last.note || 'sem motivo anotado';
+  return `${base} ${isWeekend(weekday) ? 'Último' : 'Última'} ${weekdayLower(last.date)}${last.time ? ` às ${last.time}` : ''} (${formatDate(last.date)}): ${formatMoney(last.fee)} — ${reason}.`;
 }
 
-function showErrors(form, errors) {
-  form.querySelector('.form-errors')?.remove();
-  if (errors.length) form.prepend(h('div', { class: 'form-errors', role: 'alert' }, errors.map((error) => h('p', {}, error))));
-  return errors.length === 0;
+/** What is particular to a session: a value agreed for it alone, or a move from another day. */
+function sessionNoteLines(session, patient) {
+  if (!session) return [];
+  const lines = [];
+  if (hasValue(session.agreedFee)) {
+    const record = hasValue(patient?.defaultFee) ? ` (cadastro: ${formatMoney(patient.defaultFee)})` : '';
+    lines.push(`Valor só desta sessão: ${formatMoney(session.agreedFee)}${record}${session.feeReason ? ` — ${session.feeReason}` : ''}.`);
+  }
+  if (session.movedFrom) {
+    const { date, time } = session.movedFrom;
+    lines.push(`Remarcada de ${dayAndDate(date)}${time ? ` às ${time}` : ''}${session.moveReason ? ` — ${session.moveReason}` : ''}.`);
+  }
+  return lines;
 }
+
+const patientName = (app, patientId) => app.indexes.patientsById.get(patientId)?.name ?? '—';
+
+// Today, only the times still ahead are free.
+function minutesFrom(app, date) {
+  if (date !== app.today) return 0;
+  const now = new Date();
+  return Math.ceil((now.getHours() * 60 + now.getMinutes()) / 5) * 5;
+}
+
+/** The `limit` times nearest to `near`, in time order. */
+const nearestTimes = (times, near, limit = 4) =>
+  [...times]
+    .sort((a, b) => Math.abs(minutesOf(a) - minutesOf(near)) - Math.abs(minutesOf(b) - minutesOf(near)) || a.localeCompare(b))
+    .slice(0, limit)
+    .sort();
+
+/**
+ * Whether a session of the patient fits on `date` at `time`: the patient has nothing else that day
+ * (except at `ownDate`, the day of the session being moved), and no one else is at that time.
+ */
+function checkDay(app, { patientId, date, time, ownDate = null }) {
+  const entries = buildAgenda(app.dataset, app.indexes, { from: date, to: date }, app.today);
+  const own = date === ownDate ? null : entries.find((entry) => entry.patientId === patientId);
+  if (own) return { taken: true, own, lines: [`${patientName(app, patientId)} já tem sessão nesse dia${own.time ? `, às ${own.time}` : ''}.`] };
+  if (!isTime(time)) return { taken: false, lines: [] };
+  const { settings } = app.dataset;
+  const clashes = overlappingEntries(entries, { time, patientId }, settings);
+  if (!clashes.length) return { taken: false, lines: ['✓ Horário livre.'] };
+  const times = nearestTimes(freeStartTimes(date, entries, settings, { patientId, fromMinutes: minutesFrom(app, date), limit: 100 }), time);
+  return {
+    taken: true,
+    lines: [
+      `Nesse horário já ${clashes.length > 1 ? 'estão' : 'está'} ${listText(clashes.map((entry) => `${patientName(app, entry.patientId)} (${rangeText(entry.time, settings)})`))}.`,
+      ...(times.length ? [] : ['Não há horário livre nesse dia. Escolha outro dia.']),
+    ],
+    times,
+    timesLabel: 'Horários livres nesse dia (toque para escolher):',
+  };
+}
+
+/**
+ * Whether a fixed day (weekday and time) fits in the next weeks of the planned schedule: who else is
+ * at that time, on which of those days, and the times free on all of them.
+ */
+function checkFixedDay(app, planned, { weekday, time, from }) {
+  if (!isTime(time)) return { taken: false, lines: [] };
+  const dates = slotDates(planned, weekday, from, LINE_CHECK_WEEKS);
+  if (!dates.length) return { taken: false, lines: [] };
+  const { settings } = app.dataset;
+  const entries = buildAgenda(app.dataset, app.indexes, { from: dates[0], to: dates.at(-1) }, app.today);
+  const onDate = (date) => entries.filter((entry) => entry.date === date);
+  const clashes = new Map();
+  dates.forEach((date) =>
+    overlappingEntries(onDate(date), { time, patientId: planned.id }, settings).forEach((entry) => {
+      const clash = clashes.get(entry.patientId) ?? { time: entry.time, dates: [] };
+      clash.dates.push(date);
+      clashes.set(entry.patientId, clash);
+    }),
+  );
+  if (!clashes.size) return { taken: false, lines: ['✓ Horário livre.'] };
+  const freeByDate = dates.map((date) => new Set(freeStartTimes(date, onDate(date), settings, { patientId: planned.id, fromMinutes: minutesFrom(app, date), limit: 100 })));
+  const times = nearestTimes([...freeByDate[0]].filter((t) => freeByDate.every((free) => free.has(t))), time);
+  return {
+    taken: true,
+    lines: [
+      ...[...clashes].map(([patientId, clash]) => {
+        const when = clash.dates.length === dates.length ? nextWeekdays(weekday) : `em ${listText(clash.dates.map(shortDate))}`;
+        return `Nesse horário já está ${patientName(app, patientId)} (${rangeText(clash.time, settings)}), ${when}.`;
+      }),
+      ...(times.length ? [] : ['Não há um horário livre em todas essas datas. Escolha outro dia.']),
+    ],
+    times,
+    timesLabel: `Horários livres ${nextWeekdays(weekday)} (toque para escolher):`,
+  };
+}
+
+/** The check of one of the patient's fixed days as it would be after a change (`slot` at `index`). */
+function checkPatientSlot(app, patient, index, slot) {
+  const planned = { ...patient, schedule: patient.schedule.map((item, position) => (position === index ? slot : item)) };
+  return checkFixedDay(app, planned, { weekday: slot.weekday, time: slot.time, from: app.today });
+}
+
+/** Where a check is said: green when free, red with the free times as buttons when not. */
+function slotCheckBox(onPick) {
+  const element = h('div', { class: 'slot-check', hidden: true, 'aria-live': 'polite' });
+  let taken = false;
+  const show = ({ taken: isTaken = false, lines = [], times = [], timesLabel = '' }, action = null) => {
+    taken = isTaken;
+    element.hidden = !lines.length;
+    element.className = `slot-check ${isTaken ? 'slot-check--taken' : 'slot-check--free'}`;
+    replaceChildren(
+      element,
+      lines.map((line) => h('p', {}, line)),
+      times.length ? [h('p', { class: 'slot-check__label' }, timesLabel), h('div', { class: 'slot-check__times' }, times.map((time) => button(time, { variant: 'secondary', onClick: () => onPick(time) })))] : null,
+      action,
+    );
+  };
+  return { element, show, isTaken: () => taken };
+}
+
+/** Schedules a session ("Só esta vez") or the patient's fixed days, each with its value. */
+function openScheduleForm(app, { patientId = '', date = app.today, time = '' } = {}) {
+  openDialog('Agendar / encaixe', (close) => {
+    const { settings } = app.dataset;
+    const form = h('form', { class: 'form', novalidate: true });
+    const patientInput = patientChoice(app, patientId, { name: 'patientId' });
+    const dateInput = h('input', { class: 'input', type: 'date', required: true, value: date });
+    const timeInput = h('input', { class: 'input', type: 'time', value: time });
+    const feeInput = h('input', { class: 'input', inputmode: 'decimal', placeholder: '0,00' });
+    const reasonInput = h('input', { class: 'input', maxlength: '200', placeholder: 'Ex.: valor combinado para esta sessão (sem conteúdo clínico)' });
+    const noteInput = h('input', { class: 'input', maxlength: '200', placeholder: 'Ex.: troca de horário (sem conteúdo clínico)' });
+    const patientField = field('Paciente', patientInput);
+    const dateField = field('Data', dateInput);
+    const timeField = field('Horário', timeInput);
+    const feeField = field('Valor (R$)', feeInput);
+    const reasonField = field('Motivo do valor diferente do cadastro (obrigatório)', reasonInput);
+    const noteField = field('Observação (opcional)', noteInput);
+    [
+      [patientField, patientInput],
+      [dateField, dateInput],
+      [timeField, timeInput],
+      [feeField, feeInput],
+      [reasonField, reasonInput],
+    ].forEach(([container, control]) => clearOnChange(container, control));
+    const feeNote = h('p', { class: 'fee-note', hidden: true });
+    const daysBox = h('div', { class: 'days-box', hidden: true });
+    const repeatHint = h('p', { class: 'repeat-hint' });
+    const currentPatient = () => app.indexes.patientsById.get(patientInput.value);
+    let feeEdited = false;
+    feeInput.addEventListener('input', () => (feeEdited = true));
+
+    // "Só esta vez": one date and time, checked as they are chosen.
+    const onceCheck = slotCheckBox((picked) => {
+      timeInput.value = picked;
+      fieldMessage(timeField, '');
+      refreshOnce();
+    });
+    const refreshOnce = () => {
+      const patient = currentPatient();
+      if (!feeEdited) feeInput.value = moneyText(patient?.defaultFee);
+      if (repeat.value() || !patient || !isIsoDate(dateInput.value)) {
+        onceCheck.show({});
+        feeNote.hidden = true;
+        reasonField.hidden = true;
+        return;
+      }
+      const check = checkDay(app, { patientId: patient.id, date: dateInput.value, time: timeInput.value });
+      // Already coming that day: changing that session is "Remarcar", offered right here.
+      const action =
+        check.own && isOpenAppointment(check.own)
+          ? button(`Mudar o horário dessa sessão`, {
+              variant: 'secondary',
+              onClick: () => {
+                close();
+                openRescheduleForm(app, check.own);
+              },
+            })
+          : null;
+      onceCheck.show(check.own && !action ? { ...check, lines: [...check.lines, 'Escolha outro dia.'] } : check, action);
+      feeNote.textContent = feeBasisText(app, patient, { weekday: weekdayIndex(dateInput.value), time: timeInput.value, before: dateInput.value });
+      feeNote.hidden = false;
+      reasonField.hidden = !needsFeeReason(parseMoneyInput(feeInput.value), patient);
+    };
+
+    // With a repetition: "how many times" and one line per time (day, time, value), all alike.
+    let days = null;
+    let lines = new Map();
+    // The next session of a fixed day is never before today.
+    const startDate = () => [isIsoDate(dateInput.value) ? dateInput.value : app.today, app.today].sort().at(-1);
+    const plannedPatient = (patient) => withFixedDays(patient, { days, from: isIsoDate(dateInput.value) ? dateInput.value : app.today, frequency: repeat.value() });
+    const nextDateOf = (day) => {
+      const patient = currentPatient();
+      return patient && repeat.value() ? nextSlotDate(plannedPatient(patient), app.indexes.sessionsByPatient.get(patient.id) ?? [], day.weekday, startDate()) : null;
+    };
+    // A line's value: what was typed, or the patient's when nothing was.
+    const feeOfDay = (day) => (day.feeText?.trim() ? parseMoneyInput(day.feeText) : currentPatient()?.defaultFee ?? null);
+    // The next session of the line when it already has a value of its own (agreed earlier).
+    const agreedOn = (sessions, patient, onDate) =>
+      onDate ? sessions.find((session) => session.patientId === patient.id && session.date === onDate && hasValue(session.agreedFee)) : null;
+    const dayText = (day) => `${WEEKDAY_NAMES[day.weekday].toLowerCase()} às ${day.time || '(horário?)'}`;
+    const showRepeatHint = () => {
+      const period = REPEAT_OPTIONS.find(([value]) => value === repeat.value())[2];
+      if (!period) {
+        repeatHint.textContent = 'Marca só esta data. Para dias fixos na agenda, escolha uma das outras opções.';
+        return;
+      }
+      const patient = currentPatient();
+      replaceChildren(
+        repeatHint,
+        h('strong', {}, `Dias fixos: ${listText(days.map(dayText))}, ${period}${isIsoDate(dateInput.value) ? `, a partir de ${formatDate(dateInput.value)}` : ''}.`),
+        patient?.schedule.length ? [h('br'), `Substitui os dias fixos atuais de ${patient.name}: ${fixedDaysText(patient)}.`] : null,
+      );
+    };
+    const refreshLines = () => lines.forEach((line) => line.refresh());
+
+    const dayLine = (day, index) => {
+      const weekdayInput = select(WEEKDAY_OPTIONS, { value: String(day.weekday), ariaLabel: `Dia da ${index + 1}ª vez` });
+      const lineTime = h('input', { class: `input${day.time ? '' : ' input--missing'}`, type: 'time', value: day.time, 'aria-label': `Horário da ${index + 1}ª vez` });
+      const lineFee = h('input', { class: 'input input--money', inputmode: 'decimal', placeholder: '0,00', 'aria-label': `Valor da ${index + 1}ª vez` });
+      const lineReason = h('input', { class: 'input', maxlength: '200', placeholder: 'Ex.: valor combinado para esta semana (sem conteúdo clínico)' });
+      const dayField = h('label', { class: 'setup-row__field' }, h('span', {}, `${index + 1}ª vez: dia`), weekdayInput);
+      const lineTimeField = h('label', { class: 'setup-row__field' }, h('span', {}, 'Horário'), lineTime);
+      const lineFeeField = h('label', { class: 'setup-row__field' }, h('span', {}, 'Valor (R$)'), lineFee);
+      const lineReasonField = field('Motivo do valor diferente do cadastro (obrigatório)', lineReason);
+      const note = h('p', { class: 'fee-note' });
+      const check = slotCheckBox((picked) => {
+        day.time = picked;
+        lineTime.value = picked;
+        lineTime.classList.remove('input--missing');
+        fieldMessage(lineTimeField, '');
+        showRepeatHint();
+        refreshLines();
+      });
+      // A line opens with the value its next session already has, so saving keeps it.
+      const patient = currentPatient();
+      const booked = patient && day.feeText === undefined ? agreedOn(app.indexes.sessionsByPatient.get(patient.id) ?? [], patient, nextDateOf(day)) : null;
+      if (booked) {
+        day.feeText = moneyText(booked.agreedFee);
+        day.reason = day.reason ?? booked.feeReason;
+      }
+      lineFee.value = day.feeText ?? moneyText(patient?.defaultFee);
+      lineReason.value = day.reason ?? '';
+      const refresh = () => {
+        const chosen = currentPatient();
+        const fee = feeOfDay(day);
+        const next = nextDateOf(day);
+        check.show(chosen && repeat.value() ? checkFixedDay(app, plannedPatient(chosen), { weekday: day.weekday, time: day.time, from: startDate() }) : {});
+        replaceChildren(
+          note,
+          chosen ? feeBasisText(app, chosen, { weekday: day.weekday, time: day.time, before: next ?? startDate() }) : '',
+          next && differsFromPatient(fee, chosen)
+            ? h('strong', {}, ` Este valor vale só para a sessão de ${next === app.today ? 'hoje' : dayAndDate(next)}; depois volta ao do cadastro.`)
+            : null,
+        );
+        lineReasonField.hidden = !needsFeeReason(fee, chosen);
+      };
+      weekdayInput.addEventListener('change', () => {
+        day.weekday = Number(weekdayInput.value);
+        fieldMessage(dayField, '');
+        showRepeatHint();
+        refreshLines();
+      });
+      lineTime.addEventListener('input', () => {
+        day.time = lineTime.value;
+        lineTime.classList.toggle('input--missing', !lineTime.value);
+        fieldMessage(lineTimeField, '');
+        showRepeatHint();
+        refreshLines();
+      });
+      lineFee.addEventListener('input', () => {
+        day.feeText = lineFee.value;
+        fieldMessage(lineFeeField, '');
+        refresh();
+      });
+      lineReason.addEventListener('input', () => {
+        day.reason = lineReason.value;
+        fieldMessage(lineReasonField, '');
+      });
+      lines.set(day, { refresh, check, dayField, lineTimeField, lineFeeField, lineReasonField });
+      return h(
+        'li',
+        { class: 'setup-slot' },
+        dayField,
+        lineTimeField,
+        lineFeeField,
+        h('div', { class: 'setup-slot__note' }, check.element, note, lineReasonField),
+      );
+    };
+    const renderDays = () => {
+      const setCount = (next) => {
+        days = withWeeklyCount(days, next, settings.workDays);
+        renderDays();
+      };
+      lines = new Map();
+      replaceChildren(
+        daysBox,
+        h('div', { class: 'setup-row__field' }, h('span', { class: 'field__label' }, 'Quantas vezes'), countStepper(days.length, repeat.value(), setCount)),
+        h('ul', { class: 'setup-slots' }, days.map(dayLine)),
+      );
+      refreshLines();
+      showRepeatHint();
+    };
+    const onRepeatChange = () => {
+      const repeating = Boolean(repeat.value());
+      if (repeating && !days) days = [{ weekday: isIsoDate(dateInput.value) ? weekdayIndex(dateInput.value) : 1, time: timeInput.value }];
+      dateField.querySelector('.field__label').textContent = repeating ? 'A partir de' : 'Data';
+      // With fixed days, each line has its own value and reason; an observation would have nowhere to go.
+      [timeField, feeField, noteField].forEach((part) => (part.hidden = repeating));
+      daysBox.hidden = !repeating;
+      if (repeating) renderDays();
+      else showRepeatHint();
+      refreshOnce();
+    };
+    const repeat = repeatChoices(onRepeatChange);
+    [patientInput, dateInput].forEach((input) =>
+      input.addEventListener('input', () => {
+        if (repeat.value() && days) renderDays();
+        showRepeatHint();
+        refreshOnce();
+      }),
+    );
+    [timeInput, feeInput].forEach((input) => input.addEventListener('input', refreshOnce));
+
+    const saveFixedDays = () => {
+      const patient = currentPatient();
+      const fees = days.map(feeOfDay);
+      const seen = new Set();
+      let problems = 0;
+      const problem = (container, message) => (problems += fieldMessage(container, message) ? 1 : 0);
+      problem(patientField, patient ? '' : 'Escolha o paciente.');
+      problem(dateField, isIsoDate(dateInput.value) ? '' : 'Escolha a partir de que dia.');
+      days.forEach((day, index) => {
+        const line = lines.get(day);
+        problem(line.dayField, seen.has(day.weekday) ? `Já há outra vez ${onWeekday(day.weekday)}. Escolha outro dia.` : '');
+        seen.add(day.weekday);
+        problem(line.lineTimeField, isTime(day.time) ? '' : 'Escolha o horário.');
+        problem(line.lineFeeField, Number.isNaN(fees[index]) ? 'Valor inválido. Escreva, por exemplo, 150 ou 150,00.' : '');
+        problem(line.lineReasonField, needsFeeReason(fees[index], patient) && !day.reason?.trim() ? 'Escreva o motivo.' : '');
+        if (line.check.isTaken()) problems += 1;
+      });
+      if (problems) return firstProblemInView(form);
+      const planned = plannedPatient(patient);
+      let next = savePatient(app.dataset, planned);
+      // A value other than the patient's is for the next session of that day only.
+      const agreed = [];
+      days.forEach((day, index) => {
+        const onDate = nextSlotDate(planned, next.sessions.filter((session) => session.patientId === patient.id), day.weekday, startDate());
+        if (!onDate) return;
+        if (differsFromPatient(fees[index], patient)) {
+          next = withAgreedFee(next, { patientId: patient.id, date: onDate, time: day.time, fee: fees[index], reason: (day.reason ?? '').trim() });
+          agreed.push(`${dayAndDate(onDate)}, ${formatMoney(fees[index])}`);
+          return;
+        }
+        // Back to the patient's value: the next session loses the value agreed before.
+        const booked = agreedOn(next.sessions, patient, onDate);
+        if (booked) next = saveSession(next, { ...booked, fee: patient.defaultFee ?? null, agreedFee: null, feeReason: '' });
+      });
+      app.commit(next);
+      toast(`Dias fixos de ${patient.name}: ${listText(days.map(dayText))}.${agreed.length ? ` Valor só na próxima sessão: ${listText(agreed)}.` : ''}`);
+      close();
+    };
+
+    const saveOnce = () => {
+      const patient = currentPatient();
+      const fee = parseMoneyInput(feeInput.value);
+      let problems = 0;
+      const problem = (container, message) => (problems += fieldMessage(container, message) ? 1 : 0);
+      problem(patientField, patient ? '' : 'Escolha o paciente.');
+      problem(dateField, isIsoDate(dateInput.value) ? '' : 'Escolha a data.');
+      problem(timeField, isTime(timeInput.value) ? '' : 'Escolha o horário.');
+      problem(feeField, Number.isNaN(fee) ? 'Valor inválido. Escreva, por exemplo, 150 ou 150,00.' : '');
+      problem(reasonField, needsFeeReason(fee, patient) && !reasonInput.value.trim() ? 'Escreva o motivo.' : '');
+      if (onceCheck.isTaken()) problems += 1;
+      if (problems) return firstProblemInView(form);
+      const agreed = differsFromPatient(fee, patient);
+      app.commit(
+        saveSession(
+          app.dataset,
+          newSession({
+            patientId: patient.id,
+            date: dateInput.value,
+            time: timeInput.value,
+            status: ATTENDANCE.SCHEDULED,
+            fee,
+            agreedFee: agreed ? fee : null,
+            feeReason: agreed ? reasonInput.value.trim() : '',
+            note: noteInput.value.trim(),
+          }),
+        ),
+      );
+      toast(`Sessão de ${patient.name} marcada para ${lowerFirst(formatDateLong(dateInput.value))}, às ${timeInput.value}.`);
+      close();
+    };
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (repeat.value()) saveFixedDays();
+      else saveOnce();
+    });
+
+    form.append(
+      patientField,
+      repeat.element,
+      h('div', { class: 'form-grid' }, dateField, timeField, feeField),
+      onceCheck.element,
+      feeNote,
+      reasonField,
+      daysBox,
+      repeatHint,
+      noteField,
+      formActions(close),
+    );
+    showRepeatHint();
+    refreshOnce();
+    return form;
+  });
+}
+
+/**
+ * Moves one session to another date or time, with the reason. The patient's fixed days stay as
+ * they are; the day it left stops showing it. `onSaved` lets an open day panel redraw itself.
+ */
+function openRescheduleForm(app, entry, { onSaved = null } = {}) {
+  const name = patientName(app, entry.patientId);
+  const patient = app.indexes.patientsById.get(entry.patientId);
+  const session = entry.session ?? newSession({ patientId: entry.patientId, date: entry.date, time: entry.time ?? '', status: ATTENDANCE.SCHEDULED });
+  openDialog('Remarcar sessão', (close) => {
+    const form = h('form', { class: 'form', novalidate: true });
+    const dateInput = h('input', { class: 'input', type: 'date', required: true, value: entry.date });
+    const timeInput = h('input', { class: 'input', type: 'time', value: entry.time ?? '' });
+    const reasonInput = h('input', { class: 'input', maxlength: '200', value: session.moveReason ?? '', placeholder: 'Ex.: o paciente pediu para trocar o dia (sem conteúdo clínico)' });
+    const dateField = field('Nova data', dateInput);
+    const timeField = field('Novo horário', timeInput);
+    const reasonField = field('Por que mudou? (obrigatório)', reasonInput);
+    [
+      [dateField, dateInput],
+      [timeField, timeInput],
+      [reasonField, reasonInput],
+    ].forEach(([container, control]) => clearOnChange(container, control));
+    const summary = h('p', { class: 'repeat-hint', hidden: true });
+    const unchanged = () => dateInput.value === entry.date && timeInput.value === (entry.time ?? '');
+    const check = slotCheckBox((picked) => {
+      timeInput.value = picked;
+      fieldMessage(timeField, '');
+      refresh();
+    });
+    const refresh = () => {
+      const valid = isIsoDate(dateInput.value) && isTime(timeInput.value) && !unchanged();
+      const result = isIsoDate(dateInput.value) && !unchanged() ? checkDay(app, { patientId: entry.patientId, date: dateInput.value, time: timeInput.value, ownDate: entry.date }) : {};
+      check.show(result.own ? { ...result, lines: [...result.lines, 'Escolha outro dia.'] } : result);
+      // Only a move that can be saved is described.
+      summary.hidden = !valid || check.isTaken();
+      if (!summary.hidden) {
+        replaceChildren(
+          summary,
+          h('strong', {}, `Ao salvar, a sessão passa para ${lowerFirst(formatDateLong(dateInput.value))}, às ${timeInput.value}.`),
+          patient?.schedule?.length ? [h('br'), `Os outros dias de ${name} continuam iguais.`] : null,
+        );
+      }
+    };
+    [dateInput, timeInput].forEach((input) => input.addEventListener('input', refresh));
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      let problems = 0;
+      const problem = (container, message) => (problems += fieldMessage(container, message) ? 1 : 0);
+      problem(dateField, !isIsoDate(dateInput.value) ? 'Escolha a nova data.' : unchanged() ? 'É o mesmo dia e horário de agora. Escolha outro dia ou outro horário.' : '');
+      problem(timeField, isTime(timeInput.value) ? '' : 'Escolha o novo horário.');
+      problem(reasonField, reasonInput.value.trim() ? '' : 'Escreva o motivo.');
+      if (check.isTaken()) problems += 1;
+      if (problems) return firstProblemInView(form);
+      app.commit(moveSession(app.dataset, session, { date: dateInput.value, time: timeInput.value, reason: reasonInput.value.trim() }));
+      toast(`Sessão de ${name} remarcada para ${lowerFirst(formatDateLong(dateInput.value))}, às ${timeInput.value}.`);
+      close();
+      onSaved?.();
+    });
+
+    form.append(
+      h('p', { class: 'reschedule-from' }, h('strong', {}, name), h('br'), `Marcada para ${lowerFirst(formatDateLong(entry.date))}${entry.time ? `, às ${entry.time}` : ''}.`),
+      ...sessionNoteLines(session, patient).map((line) => h('p', { class: 'fee-note' }, line)),
+      h('div', { class: 'form-grid' }, dateField, timeField),
+      check.element,
+      reasonField,
+      summary,
+      formActions(close),
+    );
+    refresh();
+    return form;
+  });
+}
+
+return { sessionNoteLines, checkFixedDay, checkPatientSlot, slotCheckBox, openScheduleForm, openRescheduleForm };
+})();
+modules["ui/forms.js"] = (() => {
+const { noticeHoursBefore, suggestedFee } = modules["domain/billing-policy.js"];
+const { deletePayment, deleteSession, newPayment, newSession, registerPayment, savePatient, saveSession } = modules["domain/mutations.js"];
+const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText } = modules["domain/patients.js"];
+const { ATTENDANCE, ATTENDANCE_LABELS, NOTICE_LABELS, PUNCTUALITY, PUNCTUALITY_LABELS } = modules["domain/status.js"];
+const { scheduledSlotsOn } = modules["domain/schedule.js"];
+const { formatMonth, isIsoDate, isTime, monthOf, WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { button, field, openDialog, select, toast } = modules["ui/components.js"];
+const { formatMoney, h, parseMoneyInput } = modules["ui/dom.js"];
+const { formActions, moneyText, numberOrNull, patientChoice, showErrors } = modules["ui/form-parts.js"];
+const { checkFixedDay, openScheduleForm, sessionNoteLines, slotCheckBox } = modules["ui/scheduling-form.js"];
+const { describeCell } = modules["lib/text.js"];
+const optionsOf = (labels, emptyLabel = null) => [...(emptyLabel ? [['', emptyLabel]] : []), ...Object.entries(labels)];
 
 /** Create or edit one session. Fee follows the absence policy until the user types a value. */
 function openSessionForm(app, { session = null, patientId = '', date = app.today, time = '', status = ATTENDANCE.PRESENT } = {}) {
+  // Scheduling asks only what scheduling needs (who, when, how often, for how much): its own form.
+  if (!session && status === ATTENDANCE.SCHEDULED) return openScheduleForm(app, { patientId, date, time });
   const current = session ?? newSession({ patientId, date, time, status });
-  const title = session ? 'Editar sessão' : status === ATTENDANCE.SCHEDULED ? 'Agendar / encaixe' : 'Nova sessão';
-  // Scheduling asks only what scheduling needs: who, when, and whether it repeats. Payment and
-  // attendance fields belong to a session that happened (Editar / Nova sessão).
-  const scheduling = !session && status === ATTENDANCE.SCHEDULED;
-  openDialog(title, (close) => {
+  openDialog(session ? 'Editar sessão' : 'Nova sessão', (close) => {
     let feeEditedByUser = Boolean(session);
     const form = h('form', { class: 'form', novalidate: true });
     const inputs = {
@@ -4777,7 +5564,6 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
       note: h('input', { class: 'input', value: current.note, maxlength: '200', placeholder: 'Ex.: motivo da falta (sem conteúdo clínico)' }),
     };
     if (session) inputs.patientId.disabled = true;
-    if (scheduling) inputs.note.placeholder = 'Ex.: troca de horário (sem conteúdo clínico)';
 
     const noticeReadout = h('span', { class: 'field__hint' });
     const absenceFields = h(
@@ -4789,83 +5575,9 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
     );
     const attendanceFields = h('div', { class: 'form-grid' }, field('Pontualidade', inputs.punctuality), field('Atraso (minutos)', inputs.lateMinutes));
     const policyHint = h('span', { class: 'field__hint' });
-    // Scheduling with a repetition: "how many times" and one line (day + time) per time, all alike.
-    let days = null;
-    const dateField = field('Data', inputs.date);
-    const timeField = field('Horário', inputs.time);
-    const daysBox = h('div', { class: 'days-box', hidden: true });
-    const repeatHint = h('p', { class: 'repeat-hint' });
-    const dayText = (day) => `${WEEKDAY_NAMES[day.weekday].toLowerCase()} às ${day.time || '(horário?)'}`;
-    const showRepeatHint = () => {
-      const period = REPEAT_OPTIONS.find(([value]) => value === repeat.value())[2];
-      if (!period) {
-        repeatHint.textContent = 'Marca só esta data. Para dias fixos na agenda, escolha uma das outras opções.';
-        return;
-      }
-      const patient = app.indexes.patientsById.get(inputs.patientId.value);
-      repeatHint.replaceChildren(
-        h('strong', {}, `Dias fixos: ${listText(days.map(dayText))}, ${period}${isIsoDate(inputs.date.value) ? `, a partir de ${formatDate(inputs.date.value)}` : ''}.`),
-        ...(patient?.schedule.length ? [h('br'), `Substitui os dias fixos atuais de ${patient.name}: ${fixedDaysText(patient)}.`] : []),
-      );
-    };
-    const dayLine = (day, index) =>
-      h(
-        'li',
-        { class: 'setup-slot' },
-        h(
-          'label',
-          { class: 'setup-row__field' },
-          h('span', {}, `${index + 1}ª vez: dia`),
-          select(WEEKDAY_OPTIONS, {
-            value: String(day.weekday),
-            ariaLabel: `Dia da ${index + 1}ª vez`,
-            onChange: (event) => {
-              day.weekday = Number(event.target.value);
-              showRepeatHint();
-            },
-          }),
-        ),
-        h(
-          'label',
-          { class: 'setup-row__field' },
-          h('span', {}, 'Horário'),
-          h('input', {
-            class: `input${day.time ? '' : ' input--missing'}`,
-            type: 'time',
-            value: day.time,
-            'aria-label': `Horário da ${index + 1}ª vez`,
-            onInput: (event) => {
-              day.time = event.target.value;
-              event.target.classList.toggle('input--missing', !event.target.value);
-              showRepeatHint();
-            },
-          }),
-        ),
-      );
-    const renderDays = () => {
-      const setCount = (next) => {
-        days = withWeeklyCount(days, next, app.dataset.settings.workDays);
-        renderDays();
-      };
-      replaceChildren(
-        daysBox,
-        h('div', { class: 'setup-row__field' }, h('span', { class: 'field__label' }, 'Quantas vezes'), countStepper(days.length, repeat.value(), setCount)),
-        h('ul', { class: 'setup-slots' }, days.map(dayLine)),
-      );
-      showRepeatHint();
-    };
-    const onRepeatChange = () => {
-      const repeating = Boolean(repeat.value());
-      if (repeating && !days) days = [{ weekday: isIsoDate(inputs.date.value) ? weekdayIndex(inputs.date.value) : 1, time: inputs.time.value }];
-      dateField.querySelector('.field__label').textContent = repeating ? 'A partir de' : 'Data';
-      timeField.hidden = repeating;
-      daysBox.hidden = !repeating;
-      if (repeating) renderDays();
-      else showRepeatHint();
-    };
-    const repeat = repeatChoices(onRepeatChange);
 
     const readDraft = () => ({
+      agreedFee: current.agreedFee ?? null,
       status: inputs.status.value,
       notice: inputs.notice.value || null,
       noticeHours: numberOrNull(inputs.noticeHours.value),
@@ -4898,7 +5610,6 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
     };
     [inputs.patientId, inputs.date, inputs.time, inputs.status, inputs.notice, inputs.noticeAt, inputs.noticeHours, inputs.punctuality].forEach((input) => input.addEventListener('input', refresh));
     [inputs.patientId, inputs.date].forEach((input) => input.addEventListener('input', fillTimeFromSchedule));
-    [inputs.patientId, inputs.date, inputs.time].forEach((input) => input.addEventListener('input', showRepeatHint));
     inputs.fee.addEventListener('input', () => (feeEditedByUser = true));
     inputs.paid.addEventListener('change', () => {
       if (inputs.paid.checked && !inputs.paidOn.value) inputs.paidOn.value = app.today;
@@ -4906,20 +5617,6 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      if (scheduling && repeat.value()) {
-        const patient = app.indexes.patientsById.get(inputs.patientId.value);
-        const fixedErrors = [
-          !patient && 'Escolha o paciente.',
-          !isIsoDate(inputs.date.value) && 'Informe a partir de quando.',
-          days.some((day) => !isTime(day.time)) && 'Informe o horário de cada vez.',
-          new Set(days.map((day) => day.weekday)).size < days.length && 'Há duas vezes no mesmo dia da semana: escolha dias diferentes.',
-        ].filter(Boolean);
-        if (!showErrors(form, fixedErrors)) return;
-        app.commit(savePatient(app.dataset, withFixedDays(patient, { days, from: inputs.date.value, frequency: repeat.value() })));
-        toast(`Dias fixos de ${patient.name}: ${listText(days.map(dayText))}.`);
-        close();
-        return;
-      }
       const fee = parseMoneyInput(inputs.fee.value);
       const errors = [
         !inputs.patientId.value && 'Escolha o paciente.',
@@ -4965,29 +5662,25 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
         })
       : null;
 
-    const when = h('div', { class: 'form-grid' }, dateField, timeField);
-    // Scheduling: who, whether it repeats, then when (one date, or the fixed days).
-    const parts = scheduling
-      ? [field('Paciente', inputs.patientId), repeat.element, when, daysBox, repeatHint, field('Observação (opcional)', inputs.note), formActions(close)]
-      : [
+    const parts = [
           field('Paciente', inputs.patientId),
-          when,
+          h('div', { class: 'form-grid' }, field('Data', inputs.date), field('Horário', inputs.time)),
           field('Situação', inputs.status),
           absenceFields,
           attendanceFields,
           h('div', { class: 'form-grid' }, h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Valor (R$)'), inputs.fee, policyHint), field('Data do pagamento', inputs.paidOn)),
           h('label', { class: 'check' }, inputs.paid, h('span', {}, 'Sessão paga')),
           field('Observação', inputs.note),
+          sessionNoteLines(session, app.indexes.patientsById.get(current.patientId)).map((line) => h('p', { class: 'fee-note' }, line)),
           session?.source
             ? h('p', { class: 'muted' }, `Origem: ${session.source.includes('!') ? `planilha, ${describeCell(session.source)}` : session.source}${session.rawStatus ? ` · na planilha: "${session.rawStatus}"` : ''}`)
             : null,
           formActions(close, removeButton),
         ];
-    // form.append would write a missing part as the text "null".
-    form.append(...parts.filter(Boolean));
+    // form.append would write a missing part as the text "null", and a list as its text.
+    form.append(...parts.flat().filter(Boolean));
     fillTimeFromSchedule();
     refresh();
-    showRepeatHint();
     return form;
   });
 }
@@ -5050,23 +5743,35 @@ function confirmDeletePayment(app, payment) {
   toast('Pagamento excluído.');
 }
 
-/** Editable list of weekly slots (weekday + time) for the patient form: one line per time a week. */
-function scheduleRowsEditor(initialSlots, frequencyOf) {
+/**
+ * Editable list of weekly slots (weekday + time) for the patient form: one line per time a week,
+ * each checked as it is filled in by `checkSlot(slot, slots)` (another patient at that time).
+ */
+function scheduleRowsEditor(initialSlots, frequencyOf, checkSlot) {
   const list = h('div', { class: 'stack' });
   const count = h('strong', { class: 'week-count__value' });
   const showCount = () => {
     count.textContent = weeklyCountText(list.querySelectorAll('[data-slot-row]').length, frequencyOf());
   };
   const element = h('div', { class: 'stack' }, list);
+  const checks = new Map();
+  const refreshChecks = () => checks.forEach((refresh) => refresh());
   const addRow = (slot = { weekday: 1, time: '' }) => {
     const weekday = select(WEEKDAY_NAMES.map((name, index) => [String(index), name]), { value: String(slot.weekday), ariaLabel: 'Dia da semana' });
     const time = h('input', { class: 'input', type: 'time', value: slot.time, 'aria-label': 'Horário' });
+    const check = slotCheckBox((picked) => {
+      time.value = picked;
+      refreshChecks();
+    });
     const remove = () => {
-      row.remove();
+      block.remove();
+      checks.delete(block);
       showCount();
     };
-    const row = h('div', { class: 'page-actions', dataset: { slotRow: '' } }, weekday, time, button('Remover', { variant: 'ghost', small: true, onClick: remove }));
-    list.append(row);
+    const block = h('div', { class: 'stack', dataset: { slotRow: '' } }, h('div', { class: 'page-actions' }, weekday, time, button('Remover', { variant: 'ghost', small: true, onClick: remove })), check.element);
+    checks.set(block, () => check.show(isTime(time.value) ? checkSlot({ weekday: Number(weekday.value), time: time.value }, read()) : {}));
+    [weekday, time].forEach((control) => control.addEventListener('input', refreshChecks));
+    list.append(block);
     showCount();
   };
   initialSlots.forEach(addRow);
@@ -5083,12 +5788,14 @@ function scheduleRowsEditor(initialSlots, frequencyOf) {
       }),
     ),
   );
-  const read = () =>
-    [...list.querySelectorAll('[data-slot-row]')].map((row) => {
+  function read() {
+    return [...list.querySelectorAll('[data-slot-row]')].map((row) => {
       const [weekday, time] = row.querySelectorAll('select, input');
       return { weekday: Number(weekday.value), time: time.value };
     });
-  return { element, read, showCount };
+  }
+  const anyTaken = () => list.querySelector('.slot-check--taken') !== null;
+  return { element, read, showCount, refreshChecks, anyTaken };
 }
 
 function openPatientForm(app, patient = null) {
@@ -5113,8 +5820,13 @@ function openPatientForm(app, patient = null) {
       ),
       notes: h('textarea', { class: 'input', rows: '2', maxlength: '500' }, current.notes),
     };
-    const schedule = scheduleRowsEditor(current.schedule, () => inputs.frequency.value);
+    // The patient as the form would save it, for checking each fixed day against the other patients.
+    const planned = (slots) => ({ ...current, frequency: inputs.frequency.value, scheduleStart: inputs.scheduleStart.value || null, schedule: slots });
+    const schedule = scheduleRowsEditor(current.schedule, () => inputs.frequency.value, (slot, slots) =>
+      checkFixedDay(app, planned(slots), { weekday: slot.weekday, time: slot.time, from: app.today }),
+    );
     inputs.frequency.addEventListener('change', () => schedule.showCount());
+    [inputs.frequency, inputs.scheduleStart].forEach((input) => input.addEventListener('input', schedule.refreshChecks));
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const fee = parseMoneyInput(inputs.defaultFee.value);
@@ -5123,6 +5835,7 @@ function openPatientForm(app, patient = null) {
         !inputs.name.value.trim() && 'Informe o nome.',
         Number.isNaN(fee) && 'Valor da sessão inválido.',
         slots.some((slot) => slot.time && !isTime(slot.time)) && 'Horário inválido nos dias de atendimento.',
+        schedule.anyTaken() && 'Um dos horários de atendimento já é de outro paciente: veja o aviso em vermelho nos dias e horários.',
       ].filter(Boolean);
       if (!showErrors(form, errors)) return;
       const scheduleChanged = JSON.stringify(slots) !== JSON.stringify(current.schedule);
@@ -5837,11 +6550,13 @@ const { buildAgenda, dayVacancies, sessionTimeRange } = modules["domain/schedule
 const { DATE_KIND, DATE_KIND_LABELS, datesOn } = modules["domain/calendar-dates.js"];
 const { attendanceSignal, daySignal, paymentSignal } = modules["domain/signals.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
+const { isOpenAppointment } = modules["domain/session-timer.js"];
 const { addDaysIso, addMonths, eachDay, endOfMonth, endOfWeek, formatDate, formatDateLong, formatMonthLong, isIsoDate, monthOf, startOfMonth, startOfWeek, WEEKDAY_NAMES, weekdayIndex } = modules["lib/dates.js"];
 const { button, emptyState, openDialog, signalDots, signalGroup, signalLabel, signalLegend } = modules["ui/components.js"];
 const { h } = modules["ui/dom.js"];
 const { focusKey, markEntry, updateEntry } = modules["ui/entry-actions.js"];
 const { openSessionForm } = modules["ui/forms.js"];
+const { openRescheduleForm, sessionNoteLines } = modules["ui/scheduling-form.js"];
 const AGENDA_MODES = [
   ['dia', 'Dia'],
   ['semana', 'Semana'],
@@ -5971,7 +6686,12 @@ function dayBody(app, date, entries, rerender) {
               'li',
               {},
               h('strong', {}, sessionTimeRange(entry.time, settings) || 'sem horário'),
-              h('span', {}, patientName(app, entry)),
+              h(
+                'span',
+                {},
+                patientName(app, entry),
+                sessionNoteLines(entry.session, app.indexes.patientsById.get(entry.patientId)).map((line) => h('small', { class: 'line-note' }, line)),
+              ),
               signalLabel(attendanceSignal(entry, settings, app.today)),
               h(
                 'label',
@@ -5992,6 +6712,7 @@ function dayBody(app, date, entries, rerender) {
                 button('Realizada', { variant: 'success', small: true, onClick: () => act(entry, ATTENDANCE.PRESENT, 'Presença registrada.') }),
                 button('Falta', { variant: 'danger-soft', small: true, onClick: () => act(entry, ATTENDANCE.ABSENT, 'Falta registrada.') }),
                 button('Desmarcou', { variant: 'secondary', small: true, onClick: () => act(entry, ATTENDANCE.CANCELLED_BY_PATIENT, 'Desmarcação registrada. Informe quando avisou.') }),
+                isOpenAppointment(entry) ? button('Remarcar', { variant: 'ghost', small: true, onClick: () => openRescheduleForm(app, entry, { onSaved: rerender }) }) : null,
               ),
               entry.session ? button('Editar', { variant: 'ghost', small: true, onClick: () => openSessionForm(app, { session: entry.session }) }) : h('span'),
             ),
@@ -6156,64 +6877,6 @@ function agendaCalendar(app, entries) {
 
 return { AGENDA_MODES, agendaRange, rangeLabel, openDayPanel, agendaCalendar };
 })();
-modules["domain/session-timer.js"] = (() => {
-const { minutesOf } = modules["lib/dates.js"];
-const { ATTENDANCE } = modules["domain/status.js"];
-// The session timer: it starts when the psychologist says so, shows how long the session has run,
-// warns once at its nominal length and keeps counting until she stops it. It never starts by itself
-// and cannot be set back: it counts from the moment she started it.
-
-const MS_PER_MINUTE = 60_000;
-
-/** Identifies an agenda appointment across re-renders and reloads. */
-const appointmentKey = (entry) => `${entry.date}|${entry.patientId}|${entry.time ?? ''}`;
-
-/** An appointment that can still take place: not yet attended, missed or cancelled. */
-const isOpenAppointment = (entry) => !entry.session || entry.session.status === ATTENDANCE.SCHEDULED;
-
-/**
- * The appointment to ask about now: today's, open, with a time that has come and a nominal length
- * that has not run out yet, and not asked about before. Entries come sorted by time.
- */
-function dueAppointment(entries, { today, nowMinutes, sessionMinutes, asked }) {
-  return (
-    entries.find((entry) => {
-      if (entry.date !== today || !entry.time || !isOpenAppointment(entry) || asked.has(appointmentKey(entry))) return false;
-      const start = minutesOf(entry.time);
-      return nowMinutes >= start && nowMinutes < start + sessionMinutes;
-    }) ?? null
-  );
-}
-
-function startTimer(entry, now, sessionMinutes) {
-  return { key: appointmentKey(entry), patientId: entry.patientId, date: entry.date, time: entry.time ?? '', startedAt: now, minutes: sessionMinutes, endNoticeShown: false };
-}
-
-const elapsedMs = (timer, now) => Math.max(0, now - timer.startedAt);
-
-const isOvertime = (timer, now) => elapsedMs(timer, now) >= timer.minutes * MS_PER_MINUTE;
-
-/** Whole minutes past the nominal length (0 before it). */
-const overtimeMinutes = (timer, now) => Math.max(0, Math.floor((elapsedMs(timer, now) - timer.minutes * MS_PER_MINUTE) / MS_PER_MINUTE));
-
-/** "05:07", or "1:02:07" from one hour on. */
-function formatElapsed(ms) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-  const seconds = String(totalSeconds % 60).padStart(2, '0');
-  return hours ? `${hours}:${minutes}:${seconds}` : `${minutes}:${seconds}`;
-}
-
-/** "56 min" or "1 h 05 min", for messages. */
-function formatDuration(ms) {
-  const totalMinutes = Math.floor(ms / MS_PER_MINUTE);
-  const hours = Math.floor(totalMinutes / 60);
-  return hours ? `${hours} h ${String(totalMinutes % 60).padStart(2, '0')} min` : `${totalMinutes} min`;
-}
-
-return { appointmentKey, isOpenAppointment, dueAppointment, startTimer, elapsedMs, isOvertime, overtimeMinutes, formatElapsed, formatDuration };
-})();
 modules["ui/agenda-setup.js"] = (() => {
 const { savePatient, saveSettings } = modules["domain/mutations.js"];
 const { FREQUENCY_LABELS } = modules["domain/patients.js"];
@@ -6221,6 +6884,7 @@ const { scheduleGaps } = modules["domain/schedule.js"];
 const { isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
 const { button, select, toast } = modules["ui/components.js"];
 const { h } = modules["ui/dom.js"];
+const { checkPatientSlot, slotCheckBox } = modules["ui/scheduling-form.js"];
 const { weeklyCountControl } = modules["ui/weekly-count.js"];
 const { workHoursInputs } = modules["ui/work-hours.js"];
 const REGULAR_FREQUENCIES = Object.entries(FREQUENCY_LABELS).filter(([value]) => value !== 'avulsa');
@@ -6240,7 +6904,17 @@ function slotRow(app, patient, index) {
   const key = `${patient.id}|${index}`;
   const slot = patient.schedule[index];
   const draft = drafts.get(key) ?? { weekday: String(slot.weekday), time: slot.time };
-  const remember = () => drafts.set(key, { weekday: weekday.value, time: time.value });
+  // Checked as it is filled in: "Horário livre", or who is there and the free times to tap.
+  const check = slotCheckBox((picked) => {
+    time.value = picked;
+    time.classList.remove('input--missing');
+    remember();
+  });
+  const refreshCheck = () => check.show(isTime(time.value) ? checkPatientSlot(app, patient, index, { weekday: Number(weekday.value), time: time.value }) : {});
+  const remember = () => {
+    drafts.set(key, { weekday: weekday.value, time: time.value });
+    refreshCheck();
+  };
   const weekday = select(WEEKDAYS, { value: draft.weekday, ariaLabel: `Dia ${index + 1} de ${patient.name}`, dataset: { focusKey: `${key}|dia` }, onChange: remember });
   const time = h('input', {
     class: `input${draft.time ? '' : ' input--missing'}`,
@@ -6250,8 +6924,11 @@ function slotRow(app, patient, index) {
     dataset: { focusKey: `${key}|hora` },
     onInput: remember,
   });
+  if (drafts.has(key)) refreshCheck();
   const save = () => {
     if (!isTime(time.value)) return toast(`Informe o horário de ${patient.name}.`, 'danger');
+    refreshCheck();
+    if (check.isTaken()) return check.element.scrollIntoView({ block: 'center' });
     const next = { weekday: Number(weekday.value), time: time.value };
     drafts.delete(key);
     app.commit(savePatient(app.dataset, { ...patient, schedule: patient.schedule.map((item, position) => (position === index ? next : item)), scheduleInferred: false }));
@@ -6264,6 +6941,7 @@ function slotRow(app, patient, index) {
     h('label', { class: 'setup-row__field' }, h('span', {}, 'Horário'), time),
     button('Salvar', { onClick: save }),
     slot.time && !drafts.has(key) ? h('span', { class: 'setup-slot__saved' }, 'salvo') : null,
+    h('div', { class: 'setup-slot__note' }, check.element),
   );
 }
 
@@ -6344,6 +7022,7 @@ const { scheduleGapsForm, workHoursForm } = modules["ui/agenda-setup.js"];
 const { button, card, openDialog, signalDots } = modules["ui/components.js"];
 const { formatMoney, h, replaceChildren } = modules["ui/dom.js"];
 const { markEntry } = modules["ui/entry-actions.js"];
+const { openRescheduleForm } = modules["ui/scheduling-form.js"];
 // How far back the main screen looks for sessions nobody registered.
 const UNRECORDED_LOOKBACK_DAYS = 60;
 
@@ -6405,6 +7084,7 @@ function unrecordedForm(app) {
             button('Falta', { variant: 'danger-soft', onClick: () => mark(entry, ATTENDANCE.ABSENT) }),
             button('Desmarcou', { variant: 'secondary', onClick: () => mark(entry, ATTENDANCE.CANCELLED_BY_PATIENT) }),
             button('Não houve sessão', { variant: 'ghost', onClick: () => mark(entry, ATTENDANCE.NO_SESSION) }),
+            button('Remarcar', { variant: 'ghost', onClick: () => openRescheduleForm(app, entry) }),
           ),
         ),
       ),
@@ -6493,6 +7173,7 @@ const { button, card, signalLabel } = modules["ui/components.js"];
 const { h } = modules["ui/dom.js"];
 const { focusKey, markEntry, updateEntry } = modules["ui/entry-actions.js"];
 const { openSessionForm } = modules["ui/forms.js"];
+const { openRescheduleForm, sessionNoteLines } = modules["ui/scheduling-form.js"];
 const LOOKAHEAD_DAYS = 14;
 
 const patientName = (app, entry) => app.indexes.patientsById.get(entry.patientId)?.name ?? '—';
@@ -6523,6 +7204,7 @@ function actions(app, entry, running) {
     button('Realizada', { variant: 'success', onClick: () => mark(ATTENDANCE.PRESENT, 'Presença registrada.') }),
     button('Falta', { variant: 'danger-soft', onClick: () => mark(ATTENDANCE.ABSENT, 'Falta registrada.') }),
     button('Desmarcou', { variant: 'secondary', onClick: () => mark(ATTENDANCE.CANCELLED_BY_PATIENT, 'Desmarcação registrada. Quando o paciente avisou dá para informar em "Editar".') }),
+    button('Remarcar', { variant: 'ghost', onClick: () => openRescheduleForm(app, entry) }),
   ];
 }
 
@@ -6538,6 +7220,7 @@ function sessionRow(app, entry) {
       { class: 'today-row__name' },
       patientName(app, entry),
       h('span', { class: 'today-row__status' }, signalLabel(running ? { tone: 'green', label: 'Em andamento' } : attendanceSignal(entry, settings, app.today))),
+      sessionNoteLines(entry.session, app.indexes.patientsById.get(entry.patientId)).map((line) => h('span', { class: 'today-row__note' }, line)),
     ),
     h('span', { class: 'today-row__actions' }, actions(app, entry, running)),
   );
@@ -7104,6 +7787,7 @@ const { addDaysIso, eachDay, formatDate, isTime, WEEKDAY_NAMES } = modules["lib/
 const { button, emptyState, select, signalLabel, table } = modules["ui/components.js"];
 const { formatMoney, formatPercent, h, parseMoneyInput } = modules["ui/dom.js"];
 const { openPatientForm } = modules["ui/forms.js"];
+const { checkPatientSlot, slotCheckBox } = modules["ui/scheduling-form.js"];
 const { confirmDroppedSlots, weeklyCountControl } = modules["ui/weekly-count.js"];
 const LOOKAHEAD_DAYS = 62;
 const STATUS_OPTIONS = [
@@ -7152,27 +7836,43 @@ function scheduleEditor(app, patient) {
     'div',
     { class: 'schedule-cell' },
     patient.scheduleInferred && patient.schedule.length ? h('span', { class: 'schedule-cell__hint' }, 'Dia sugerido pelo histórico: confira e informe o horário.') : null,
-    patient.schedule.map((slot, index) =>
-      h(
-        'div',
-        { class: 'slot-row' },
-        select(WEEKDAY_OPTIONS, {
-          value: String(slot.weekday),
-          ariaLabel: `Dia ${index + 1} de ${patient.name}`,
-          dataset: { focusKey: `${patient.id}|dia${index}` },
-          onChange: (event) => setSlot(index, { weekday: Number(event.target.value) }),
-        }),
-        h('input', {
-          class: `input input--time${slot.time ? '' : ' input--missing'}`,
-          type: 'time',
-          value: slot.time,
-          'aria-label': `Horário ${index + 1} de ${patient.name}`,
-          dataset: { focusKey: `${patient.id}|hora${index}` },
-          onChange: (event) => (!event.target.value || isTime(event.target.value)) && setSlot(index, { time: event.target.value }),
-        }),
-        h('button', { type: 'button', class: 'slot-row__remove', title: 'Tirar este dia', 'aria-label': `Tirar ${WEEKDAY_NAMES[slot.weekday]} de ${patient.name}`, onClick: () => remove(index) }, '×'),
-      ),
-    ),
+    patient.schedule.map((slot, index) => {
+      // A time another patient already has is not saved: who is there, and the free times to tap.
+      const check = slotCheckBox((picked) => setSlot(index, { weekday: Number(weekday.value), time: picked }));
+      const trySlot = (patch) => {
+        const next = { ...slot, ...patch };
+        const result = checkPatientSlot(app, patient, index, next);
+        if (!result.taken) {
+          check.show({});
+          setSlot(index, patch);
+          return;
+        }
+        check.show({ ...result, lines: [`Não foi salvo. ${result.lines[0]}`, ...result.lines.slice(1)] });
+      };
+      const weekday = select(WEEKDAY_OPTIONS, {
+        value: String(slot.weekday),
+        ariaLabel: `Dia ${index + 1} de ${patient.name}`,
+        dataset: { focusKey: `${patient.id}|dia${index}` },
+        onChange: (event) => trySlot({ weekday: Number(event.target.value) }),
+      });
+      return [
+        h(
+          'div',
+          { class: 'slot-row' },
+          weekday,
+          h('input', {
+            class: `input input--time${slot.time ? '' : ' input--missing'}`,
+            type: 'time',
+            value: slot.time,
+            'aria-label': `Horário ${index + 1} de ${patient.name}`,
+            dataset: { focusKey: `${patient.id}|hora${index}` },
+            onChange: (event) => (!event.target.value || isTime(event.target.value)) && trySlot({ time: event.target.value }),
+          }),
+          h('button', { type: 'button', class: 'slot-row__remove', title: 'Tirar este dia', 'aria-label': `Tirar ${WEEKDAY_NAMES[slot.weekday]} de ${patient.name}`, onClick: () => remove(index) }, '×'),
+        ),
+        check.element,
+      ];
+    }),
     weeklyCountControl(app, patient, saveSchedule),
     h(
       'div',
