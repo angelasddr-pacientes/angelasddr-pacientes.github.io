@@ -314,9 +314,16 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .setup-row__hint { font-weight: 400; font-size: 0.82rem; color: var(--muted); }
 .setup-row__field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; }
 .setup-row__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.setup-patient { padding: 14px 0; border-top: 1px solid var(--border); }
+.setup-patient:first-child { border-top: none; padding-top: 4px; }
+.setup-patient__head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; }
+.setup-slots { list-style: none; margin: 12px 0 0; padding: 0 0 0 14px; border-left: 3px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.setup-slot { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; }
+.setup-slot__saved { align-self: flex-end; padding-bottom: 12px; color: var(--verde); font-weight: 600; font-size: 0.9rem; }
 .setup-block { padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
 /* Larger targets for touch and for older eyes (at least 44 px high). */
 .setup-list .input, .setup-list .btn, .setup-block .input, .setup-block .btn { min-height: 44px; font-size: 1rem; }
+.setup-slot .input { min-width: 9rem; }
 
 /* —— Session bar: today's sessions, or the running session with its timer (as the Agenda's
    active-timer banner: opaque navy, light-blue digits, a blinking LED) —— */
@@ -6062,51 +6069,72 @@ const WORK_HOURS_DRAFT = 'expediente';
 // What is typed survives the re-render that saving another line causes.
 const drafts = new Map();
 
-function gapHint(patient, slot) {
-  if (!slot) return 'sem dia fixo cadastrado';
-  return patient.scheduleInferred ? 'dia sugerido pelo histórico' : 'falta o horário';
+function patientHint(patient) {
+  if (!patient.schedule.length) return 'sem dia fixo: toque em "+" para informar o dia e o horário';
+  return patient.scheduleInferred ? 'dia sugerido pelo histórico: confira' : 'falta horário';
 }
 
-function gapRow(app, { patient, index }, withCount) {
+/** One fixed day of the patient: day, time and "Salvar". Every line has the same fields. */
+function slotRow(app, patient, index) {
   const key = `${patient.id}|${index}`;
-  const slot = patient.schedule?.[index];
-  const draft = drafts.get(key) ?? { weekday: String(slot?.weekday ?? 1), time: '', frequency: patient.frequency };
-  const remember = () => drafts.set(key, { weekday: weekday.value, time: time.value, frequency: frequency.value });
-  const weekday = select(WEEKDAYS, { value: draft.weekday, ariaLabel: `Dia de ${patient.name}`, dataset: { focusKey: `${key}|dia` }, onChange: remember });
-  const time = h('input', { class: 'input', type: 'time', value: draft.time, 'aria-label': `Horário de ${patient.name}`, dataset: { focusKey: `${key}|hora` }, onInput: remember });
-  const frequency = select(REGULAR_FREQUENCIES, { value: draft.frequency, ariaLabel: `Frequência de ${patient.name}`, dataset: { focusKey: `${key}|frequencia` }, onChange: remember });
-
+  const slot = patient.schedule[index];
+  const draft = drafts.get(key) ?? { weekday: String(slot.weekday), time: slot.time };
+  const remember = () => drafts.set(key, { weekday: weekday.value, time: time.value });
+  const weekday = select(WEEKDAYS, { value: draft.weekday, ariaLabel: `Dia ${index + 1} de ${patient.name}`, dataset: { focusKey: `${key}|dia` }, onChange: remember });
+  const time = h('input', {
+    class: `input${draft.time ? '' : ' input--missing'}`,
+    type: 'time',
+    value: draft.time,
+    'aria-label': `Horário ${index + 1} de ${patient.name}`,
+    dataset: { focusKey: `${key}|hora` },
+    onInput: remember,
+  });
   const save = () => {
     if (!isTime(time.value)) return toast(`Informe o horário de ${patient.name}.`, 'danger');
     const next = { weekday: Number(weekday.value), time: time.value };
-    const schedule = index < 0 ? [next] : patient.schedule.map((item, position) => (position === index ? next : item));
     drafts.delete(key);
-    app.commit(savePatient(app.dataset, { ...patient, schedule, frequency: frequency.value, scheduleInferred: false }));
+    app.commit(savePatient(app.dataset, { ...patient, schedule: patient.schedule.map((item, position) => (position === index ? next : item)), scheduleInferred: false }));
     toast(`${patient.name}: ${WEEKDAY_NAMES[next.weekday].toLowerCase()}, ${next.time}.`);
   };
-  const noFixedDay = () => {
-    if (!confirm(`${patient.name} não tem dia e horário fixos?\n\nA agenda deixa de prever sessões para essa pessoa. Dá para mudar depois em Pacientes.`)) return;
-    const schedule = index < 0 ? [] : patient.schedule.filter((_, position) => position !== index);
-    drafts.delete(key);
-    app.commit(savePatient(app.dataset, { ...patient, schedule, frequency: schedule.length ? patient.frequency : 'avulsa', scheduleInferred: false }));
-  };
-
   return h(
     'li',
-    { class: 'setup-row' },
-    h('span', { class: 'setup-row__name' }, patient.name, h('span', { class: 'setup-row__hint' }, gapHint(patient, slot))),
+    { class: 'setup-slot' },
     h('label', { class: 'setup-row__field' }, h('span', {}, 'Dia'), weekday),
     h('label', { class: 'setup-row__field' }, h('span', {}, 'Horário'), time),
-    h('label', { class: 'setup-row__field' }, h('span', {}, 'Frequência'), frequency),
-    withCount
-      ? h(
-          'div',
-          { class: 'setup-row__field' },
-          h('span', {}, 'Quantas vezes'),
-          weeklyCountControl(app, patient, (schedule) => app.commit(savePatient(app.dataset, { ...patient, schedule, scheduleInferred: false }))),
-        )
-      : null,
-    h('span', { class: 'setup-row__actions' }, button('Salvar', { onClick: save }), button('Não tem dia fixo', { variant: 'ghost', onClick: noFixedDay })),
+    button('Salvar', { onClick: save }),
+    slot.time && !drafts.has(key) ? h('span', { class: 'setup-slot__saved' }, 'salvo') : null,
+  );
+}
+
+/**
+ * A patient whose fixed days lack a time: on top, what belongs to the patient (name, how often,
+ * how many times a week, "Não tem dia fixo"); below, one line per time a week, all alike.
+ */
+function patientBlock(app, patient) {
+  const save = (patch) => app.commit(savePatient(app.dataset, { ...patient, scheduleInferred: false, ...patch }));
+  const frequency = select(REGULAR_FREQUENCIES, {
+    value: patient.frequency,
+    ariaLabel: `Frequência de ${patient.name}`,
+    dataset: { focusKey: `${patient.id}|frequencia` },
+    onChange: (event) => save({ frequency: event.target.value }),
+  });
+  const noFixedDay = () => {
+    if (!confirm(`${patient.name} não tem dia e horário fixos?\n\nA agenda deixa de prever sessões para essa pessoa. Dá para mudar depois em Pacientes.`)) return;
+    patient.schedule.forEach((_, index) => drafts.delete(`${patient.id}|${index}`));
+    save({ schedule: [], frequency: 'avulsa' });
+  };
+  return h(
+    'li',
+    { class: 'setup-patient' },
+    h(
+      'div',
+      { class: 'setup-patient__head' },
+      h('span', { class: 'setup-row__name' }, patient.name, h('span', { class: 'setup-row__hint' }, patientHint(patient))),
+      h('label', { class: 'setup-row__field' }, h('span', {}, 'Frequência'), frequency),
+      h('div', { class: 'setup-row__field' }, h('span', {}, 'Quantas vezes'), weeklyCountControl(app, patient, (schedule) => save({ schedule }))),
+      button('Não tem dia fixo', { variant: 'ghost', onClick: noFixedDay }),
+    ),
+    patient.schedule.length ? h('ul', { class: 'setup-slots' }, patient.schedule.map((_, index) => slotRow(app, patient, index))) : null,
   );
 }
 
@@ -6130,18 +6158,17 @@ function workHoursForm(app) {
   );
 }
 
-/** One line per active patient whose fixed day lacks a time (the dialog of that pending item). */
+/** Each active patient whose fixed days lack a time (the dialog of that pending item). */
 function scheduleGapsForm(app) {
-  const gaps = scheduleGaps(app.dataset.patients, app.indexes.activeIds);
-  if (!gaps.length) return h('p', { class: 'prompt__text' }, 'Todos os pacientes têm dia e horário. Pode fechar.');
+  const patients = [...new Set(scheduleGaps(app.dataset.patients, app.indexes.activeIds).map((gap) => gap.patient))];
+  if (!patients.length) return h('p', { class: 'prompt__text' }, 'Todos os pacientes têm dia e horário. Pode fechar.');
   return [
     h(
       'p',
       {},
-      'Informe o dia, o horário e a frequência de cada paciente e toque em "Salvar". Quem vem mais de uma vez por semana: toque em "+" e informe o dia e o horário de cada vez. Cada linha sai daqui assim que é salva.',
+      'Para cada paciente, informe o horário de cada dia e toque em "Salvar". Quem vem mais de uma vez por semana: toque em "+" e aparece mais uma linha. O paciente sai daqui quando todos os horários estiverem salvos.',
     ),
-    // The counter goes on the patient's first line only.
-    h('ul', { class: 'setup-list' }, gaps.map((gap, position) => gapRow(app, gap, gaps.findIndex((other) => other.patient.id === gap.patient.id) === position))),
+    h('ul', { class: 'setup-list' }, patients.map((patient) => patientBlock(app, patient))),
   ];
 }
 
