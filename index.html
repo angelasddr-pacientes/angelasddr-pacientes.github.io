@@ -202,15 +202,15 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .dot-signal--gray .geo-dot { background: var(--dot-gray); }
 .dot-signal--cancel .geo-dot { background: var(--dot-cancel); }
 /* Red blinks in sequence (stagger), not in sync; orange and green pulse. */
-@keyframes dot-seq { 0%, 100% { opacity: 0.35; } 20%, 40% { opacity: 1; } 55% { opacity: 0.35; } }
-@keyframes geo-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.dot-signal--red .geo-dot { animation: dot-seq 1.2s ease-in-out infinite; }
-.dot-signal--red .geo-dot:nth-child(2) { animation-delay: 0.35s; }
-.dot-signal--red .geo-dot:nth-child(3) { animation-delay: 0.7s; }
-.dot-signal--orange .geo-dot { animation: geo-dot-pulse 2s ease-in-out infinite; }
-.dot-signal--green .geo-dot { animation: geo-dot-pulse 1.6s ease-in-out infinite; }
+/* Timing measured frame by frame on a recording of the Agenda Digital (18/10/2026): every 0.8 s the
+   dots light up one after the other, left to right (about 22 ms apart), stay lit for about 0.1 s
+   and go out in the same order; in between they stay pale. */
+@keyframes led-sweep { 0% { opacity: 0.18; } 3%, 17% { opacity: 1; } 21%, 100% { opacity: 0.18; } }
+.dot-signal--red .geo-dot, .dot-signal--orange .geo-dot, .dot-signal--green .geo-dot { animation: led-sweep 0.8s linear infinite; }
+.dot-signal .geo-dot:nth-child(2) { animation-delay: 22ms; }
+.dot-signal .geo-dot:nth-child(3) { animation-delay: 44ms; }
 /* Like the Agenda Digital, LEDs respect the system's "reduce motion"; the user may ask the
-   app to keep them pulsing anyway (Configurações › Aparência sets data-leds="sempre"). */
+   app to keep them blinking anyway (Configurações › Aparência sets data-leds="sempre"). */
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-leds="sempre"]) .dot-signal--red .geo-dot,
   :root:not([data-leds="sempre"]) .dot-signal--orange .geo-dot,
@@ -4302,19 +4302,19 @@ function appearanceCard() {
     checked: readLedMotion() === LED_MOTION.ALWAYS,
     onChange: (event) => {
       saveLedMotion(event.target.checked ? LED_MOTION.ALWAYS : LED_MOTION.SYSTEM);
-      toast(event.target.checked ? 'LEDs pulsando sempre.' : 'LEDs seguem a preferência do sistema.');
+      toast(event.target.checked ? 'LEDs piscando sempre.' : 'LEDs seguem a preferência do sistema.');
     },
   });
   return card(
     {},
     h('h3', { class: 'card-title' }, 'Aparência'),
-    h('label', { class: 'check' }, always, h('span', {}, 'Manter os LEDs pulsando mesmo quando o sistema pede para reduzir animações')),
+    h('label', { class: 'check' }, always, h('span', {}, 'Manter os LEDs piscando mesmo quando o sistema pede para reduzir animações')),
     h(
       'p',
       { class: 'muted' },
       systemReducesMotion()
         ? 'Este computador está pedindo para reduzir animações. Sem a opção acima, vermelho, laranja e verde ficam parados (como na Agenda Digital). No Windows: Configurações › Acessibilidade › Efeitos visuais › Efeitos de animação.'
-        : 'Este computador não pede para reduzir animações: vermelho, laranja e verde pulsam; amarelo, azul e cinza são fixos, como na Agenda Digital.',
+        : 'Este computador não pede para reduzir animações: vermelho, laranja e verde piscam a cada 0,8 s, ponto a ponto da esquerda para a direita, como na Agenda Digital; amarelo, azul e cinza são fixos.',
     ),
   );
 }
