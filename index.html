@@ -40,6 +40,8 @@
   --card: rgba(255, 255, 255, 0.62);
   --glass: rgba(255, 255, 255, 0.55);
   --glass-solid: rgba(255, 255, 255, 0.92);
+  /* Dialogs are opaque: text on a plain background, not over the busy page (NN/g legibility). */
+  --dialog-bg: #ffffff;
   /* Palette, radii and shadow of the Agenda do André (vps/public/index.html). */
   --ink: #0d223b;
   --ink-soft: #1a395c;
@@ -85,6 +87,7 @@
     --card: rgba(255, 252, 244, 0.62);
     --glass: rgba(255, 252, 244, 0.55);
     --glass-solid: rgba(255, 252, 244, 0.92);
+    --dialog-bg: #fffcf4;
     --muted: #505862;
     --border: #d3c5ab;
     --surface-2: #f6eedd;
@@ -102,6 +105,7 @@
   --card: rgba(255, 252, 244, 0.62);
   --glass: rgba(255, 252, 244, 0.55);
   --glass-solid: rgba(255, 252, 244, 0.92);
+  --dialog-bg: #fffcf4;
   --muted: #505862;
   --border: #d3c5ab;
   --surface-2: #f6eedd;
@@ -419,15 +423,23 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 12px; }
 .form-grid[hidden] { display: none; }
 .field { display: flex; flex-direction: column; gap: 4px; }
-.field__label { font-weight: 600; font-size: 0.85rem; }
-.field__hint { font-size: 0.76rem; color: var(--muted); }
+.field__label { font-weight: 600; font-size: 0.95rem; }
+.field__hint { font-size: 0.85rem; color: var(--muted); }
 .form-actions { display: flex; gap: 8px; align-items: center; padding-top: 4px; }
+.choice-list { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.choice-list legend { padding: 0; margin-bottom: 6px; }
+.choice { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--dialog-bg); cursor: pointer; font-size: 1rem; }
+.choice:has(input:checked) { border-color: var(--accent); background: var(--today-bg); font-weight: 600; }
+.choice input { width: 1.3rem; height: 1.3rem; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+.repeat-hint { font-size: 0.95rem; color: var(--text); background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 14px; }
 .form-errors { background: var(--danger-soft); color: var(--danger); padding: 10px 14px; border-radius: var(--radius-sm); font-weight: 500; }
-.dialog { width: min(44rem, calc(100vw - 2rem)); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; background: var(--card); color: var(--text); box-shadow: 0 20px 50px rgb(0 0 0 / 0.3); }
+.dialog { width: min(44rem, calc(100vw - 2rem)); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; background: var(--dialog-bg); color: var(--text); box-shadow: 0 20px 50px rgb(0 0 0 / 0.3); }
 .dialog--wide { width: min(64rem, calc(100vw - 2rem)); }
 .dialog::backdrop { background: rgb(15 22 18 / 0.55); }
 .dialog__header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.dialog__header h3 { font-size: 1.1rem; }
+.dialog__header h3 { font-size: 1.2rem; }
+/* Larger text and targets in every dialog (older eyes and hands). */
+.dialog .input, .dialog .btn { min-height: 44px; font-size: 1rem; }
 .dialog__body { padding: 18px; max-height: 78vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
 .dialog--prompt .dialog__header h3 { font-size: 1.3rem; }
 .prompt__text { font-size: 1.2rem; line-height: 1.5; }
@@ -556,20 +568,20 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 /* —— Vidro líquido (vidro-liquido.css da Agenda do André) ——
    The big panels and the fixed controls are frosted glass over the colored background; the cards
    inside them only get the translucent --card, without blur (the lists are long). */
-.side-card, .cal-wrap, .kpi, .dialog, .segmented, .backup-pill, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary {
+.side-card, .cal-wrap, .kpi, .segmented, .backup-pill, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary {
   background-color: var(--glass);
   background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05));
   -webkit-backdrop-filter: blur(22px) saturate(170%);
   backdrop-filter: blur(22px) saturate(170%);
   box-shadow: 0 10px 30px rgba(15, 30, 60, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
-.side-card, .cal-wrap, .dialog, .segmented, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary { border-color: rgba(255, 255, 255, 0.6); }
+.side-card, .cal-wrap, .segmented, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary { border-color: rgba(255, 255, 255, 0.6); }
 /* The KPI keeps its colored left border; the backup/cloud pill keeps its state border. */
 .kpi { border-top-color: rgba(255, 255, 255, 0.6); border-right-color: rgba(255, 255, 255, 0.6); border-bottom-color: rgba(255, 255, 255, 0.6); }
 .tab:not(.is-active):hover, .toolbar .btn--secondary:hover, .agenda-bar .btn--secondary:hover { border-color: var(--accent); }
 /* Without backdrop-filter, 0.55 vanishes into the background: almost opaque, so text stays readable. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .side-card, .cal-wrap, .kpi, .dialog, .segmented, .backup-pill, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary {
+  .side-card, .cal-wrap, .kpi, .segmented, .backup-pill, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary {
     background-color: var(--glass-solid);
     background-image: none;
   }
@@ -906,6 +918,19 @@ function withWeeklyCount(schedule, count, workDays) {
   return [...schedule, ...candidates.slice(0, target - schedule.length).map((weekday) => ({ weekday, time: '' }))];
 }
 
+/**
+ * The patient after "repeats" was chosen when scheduling on `date` at `time`: that weekday becomes
+ * (or updates) a fixed day, and `frequency` applies to all of them. Every 15 days or once a month
+ * count from `date`; weekly keeps an earlier start.
+ */
+function withFixedDay(patient, { date, time, frequency }) {
+  const weekday = weekdayIndex(date);
+  const existing = patient.schedule.findIndex((slot) => slot.weekday === weekday);
+  const schedule = existing >= 0 ? patient.schedule.map((slot, index) => (index === existing ? { weekday, time } : slot)) : [...patient.schedule, { weekday, time }];
+  const restart = frequency !== 'semanal' || !patient.scheduleStart || patient.scheduleStart > date;
+  return { ...patient, schedule, frequency, scheduleInferred: false, scheduleStart: restart ? date : patient.scheduleStart };
+}
+
 function isActivePatient(patient, lastSessionDate, today) {
   if (patient.status === PATIENT_STATUS.ACTIVE) return true;
   if (patient.status === PATIENT_STATUS.CLOSED) return false;
@@ -947,7 +972,7 @@ function newPatient(fields) {
   };
 }
 
-return { PATIENT_STATUS, FREQUENCY_LABELS, WEEKLY_COUNT_PERIOD, MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount, isActivePatient, inferUsualWeekday, newPatient };
+return { PATIENT_STATUS, FREQUENCY_LABELS, WEEKLY_COUNT_PERIOD, MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount, withFixedDay, isActivePatient, inferUsualWeekday, newPatient };
 })();
 modules["domain/metrics.js"] = (() => {
 const { monthOf, yearOf } = modules["lib/dates.js"];
@@ -4634,18 +4659,39 @@ return { renderImport, renderSettings };
 modules["ui/forms.js"] = (() => {
 const { noticeHoursBefore, suggestedFee } = modules["domain/billing-policy.js"];
 const { deletePayment, deleteSession, newPayment, newSession, registerPayment, savePatient, saveSession } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText } = modules["domain/patients.js"];
+const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText, withFixedDay } = modules["domain/patients.js"];
 const { ATTENDANCE, ATTENDANCE_LABELS, NOTICE_LABELS, PUNCTUALITY, PUNCTUALITY_LABELS } = modules["domain/status.js"];
 const { scheduledSlotsOn } = modules["domain/schedule.js"];
-const { formatMonth, isIsoDate, isTime, monthOf, WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { formatDate, formatMonth, isIsoDate, isTime, monthOf, WEEKDAY_NAMES, weekdayIndex } = modules["lib/dates.js"];
 const { button, field, openDialog, select, toast } = modules["ui/components.js"];
 const { formatMoney, h, parseMoneyInput } = modules["ui/dom.js"];
+const { describeCell } = modules["lib/text.js"];
 const optionsOf = (labels, emptyLabel = null) => [...(emptyLabel ? [['', emptyLabel]] : []), ...Object.entries(labels)];
 
 const patientOptions = (app) =>
   [...app.dataset.patients]
     .sort((a, b) => Number(app.indexes.activeIds.has(b.id)) - Number(app.indexes.activeIds.has(a.id)) || a.name.localeCompare(b.name, 'pt-BR'))
     .map((patient) => [patient.id, app.indexes.activeIds.has(patient.id) ? patient.name : `${patient.name} (inativo)`]);
+
+// "Repete?" when scheduling: large choices instead of a dropdown (harder for older hands, NN/g).
+const REPEAT_OPTIONS = [
+  ['', 'Só esta vez (encaixe)', ''],
+  ['semanal', 'Toda semana, neste dia e horário', 'toda semana'],
+  ['quinzenal', 'A cada 15 dias, neste dia e horário', 'a cada 15 dias'],
+  ['mensal', 'Uma vez por mês, neste dia e horário', 'uma vez por mês'],
+];
+
+function repeatChoices(onChange) {
+  const name = `repete-${Math.random().toString(36).slice(2)}`;
+  const choices = REPEAT_OPTIONS.map(([value, label], index) => ({ value, input: h('input', { type: 'radio', name, value, checked: index === 0, onChange }), label }));
+  return {
+    element: h('fieldset', { class: 'choice-list' }, h('legend', { class: 'field__label' }, 'Repete?'), choices.map(({ input, label }) => h('label', { class: 'choice' }, input, h('span', {}, label)))),
+    value: () => choices.find((choice) => choice.input.checked)?.value ?? '',
+  };
+}
+
+const fixedDaysText = (patient) =>
+  patient.schedule.length ? patient.schedule.map((slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()} ${slot.time ? `às ${slot.time}` : '(sem horário)'}`).join(', ') : 'nenhum';
 
 const numberOrNull = (text) => (String(text).trim() === '' ? null : Number(text));
 const moneyText = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
@@ -4664,6 +4710,9 @@ function showErrors(form, errors) {
 function openSessionForm(app, { session = null, patientId = '', date = app.today, time = '', status = ATTENDANCE.PRESENT } = {}) {
   const current = session ?? newSession({ patientId, date, time, status });
   const title = session ? 'Editar sessão' : status === ATTENDANCE.SCHEDULED ? 'Agendar / encaixe' : 'Nova sessão';
+  // Scheduling asks only what scheduling needs: who, when, and whether it repeats. Payment and
+  // attendance fields belong to a session that happened (Editar / Nova sessão).
+  const scheduling = !session && status === ATTENDANCE.SCHEDULED;
   openDialog(title, (close) => {
     let feeEditedByUser = Boolean(session);
     const form = h('form', { class: 'form', novalidate: true });
@@ -4683,6 +4732,7 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
       note: h('input', { class: 'input', value: current.note, maxlength: '200', placeholder: 'Ex.: motivo da falta (sem conteúdo clínico)' }),
     };
     if (session) inputs.patientId.disabled = true;
+    if (scheduling) inputs.note.placeholder = 'Ex.: troca de horário (sem conteúdo clínico)';
 
     const noticeReadout = h('span', { class: 'field__hint' });
     const absenceFields = h(
@@ -4694,6 +4744,23 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
     );
     const attendanceFields = h('div', { class: 'form-grid' }, field('Pontualidade', inputs.punctuality), field('Atraso (minutos)', inputs.lateMinutes));
     const policyHint = h('span', { class: 'field__hint' });
+    const repeatHint = h('p', { class: 'repeat-hint' });
+    const showRepeatHint = () => {
+      const period = REPEAT_OPTIONS.find(([value]) => value === repeat.value())[2];
+      const patient = app.indexes.patientsById.get(inputs.patientId.value);
+      const weekday = isIsoDate(inputs.date.value) ? WEEKDAY_NAMES[weekdayIndex(inputs.date.value)].toLowerCase() : '';
+      if (!period) {
+        repeatHint.textContent = 'Marca só esta data. Para um dia fixo na agenda, escolha uma das outras opções.';
+        return;
+      }
+      repeatHint.replaceChildren(
+        h('strong', {}, `Dia fixo: ${weekday} às ${inputs.time.value || '(informe o horário)'}, ${period}${period === 'toda semana' ? '' : `, a partir de ${formatDate(inputs.date.value)}`}.`),
+        h('br'),
+        patient ? `Dias fixos que ${patient.name} já tem: ${fixedDaysText(patient)}. ` : '',
+        'Vem mais de uma vez por semana? Agende também o outro dia, com o horário dele.',
+      );
+    };
+    const repeat = repeatChoices(showRepeatHint);
 
     const readDraft = () => ({
       status: inputs.status.value,
@@ -4728,6 +4795,7 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
     };
     [inputs.patientId, inputs.date, inputs.time, inputs.status, inputs.notice, inputs.noticeAt, inputs.noticeHours, inputs.punctuality].forEach((input) => input.addEventListener('input', refresh));
     [inputs.patientId, inputs.date].forEach((input) => input.addEventListener('input', fillTimeFromSchedule));
+    [inputs.patientId, inputs.date, inputs.time].forEach((input) => input.addEventListener('input', showRepeatHint));
     inputs.fee.addEventListener('input', () => (feeEditedByUser = true));
     inputs.paid.addEventListener('change', () => {
       if (inputs.paid.checked && !inputs.paidOn.value) inputs.paidOn.value = app.today;
@@ -4735,6 +4803,19 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
+      if (scheduling && repeat.value()) {
+        const patient = app.indexes.patientsById.get(inputs.patientId.value);
+        const fixedErrors = [
+          !patient && 'Escolha o paciente.',
+          !isIsoDate(inputs.date.value) && 'Informe a data.',
+          !isTime(inputs.time.value) && 'Para repetir, informe o horário.',
+        ].filter(Boolean);
+        if (!showErrors(form, fixedErrors)) return;
+        app.commit(savePatient(app.dataset, withFixedDay(patient, { date: inputs.date.value, time: inputs.time.value, frequency: repeat.value() })));
+        toast(`Dia fixo de ${patient.name}: ${WEEKDAY_NAMES[weekdayIndex(inputs.date.value)].toLowerCase()} às ${inputs.time.value}.`);
+        close();
+        return;
+      }
       const fee = parseMoneyInput(inputs.fee.value);
       const errors = [
         !inputs.patientId.value && 'Escolha o paciente.',
@@ -4780,19 +4861,27 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
         })
       : null;
 
-    form.append(
-      h('div', { class: 'form-grid' }, field('Paciente', inputs.patientId), field('Data', inputs.date), field('Horário', inputs.time)),
-      field('Situação', inputs.status),
-      absenceFields,
-      attendanceFields,
-      h('div', { class: 'form-grid' }, h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Valor (R$)'), inputs.fee, policyHint), field('Data do pagamento', inputs.paidOn)),
-      h('label', { class: 'check' }, inputs.paid, h('span', {}, 'Sessão paga')),
-      field('Observação', inputs.note),
-      session?.source ? h('p', { class: 'muted' }, `Origem: ${session.source}${session.rawStatus ? ` · na planilha: "${session.rawStatus}"` : ''}`) : null,
-      formActions(close, removeButton),
-    );
+    const when = [field('Paciente', inputs.patientId), h('div', { class: 'form-grid' }, field('Data', inputs.date), field('Horário', inputs.time))];
+    const parts = scheduling
+      ? [...when, repeat.element, repeatHint, field('Observação (opcional)', inputs.note), formActions(close)]
+      : [
+          ...when,
+          field('Situação', inputs.status),
+          absenceFields,
+          attendanceFields,
+          h('div', { class: 'form-grid' }, h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Valor (R$)'), inputs.fee, policyHint), field('Data do pagamento', inputs.paidOn)),
+          h('label', { class: 'check' }, inputs.paid, h('span', {}, 'Sessão paga')),
+          field('Observação', inputs.note),
+          session?.source
+            ? h('p', { class: 'muted' }, `Origem: ${session.source.includes('!') ? `planilha, ${describeCell(session.source)}` : session.source}${session.rawStatus ? ` · na planilha: "${session.rawStatus}"` : ''}`)
+            : null,
+          formActions(close, removeButton),
+        ];
+    // form.append would write a missing part as the text "null".
+    form.append(...parts.filter(Boolean));
     fillTimeFromSchedule();
     refresh();
+    showRepeatHint();
     return form;
   });
 }
