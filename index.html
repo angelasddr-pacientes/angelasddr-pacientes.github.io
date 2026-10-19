@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#1B4332" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0F1612" media="(prefers-color-scheme: dark)">
   <meta name="service-worker" content="./sw.js">
+  <meta name="firebase-config" content="{&quot;apiKey&quot;:&quot;AIzaSyCceA2bBqi3smwgKNeGdrL7vCcnr9j-MSQ&quot;,&quot;authDomain&quot;:&quot;controle-clinico-angela.firebaseapp.com&quot;,&quot;projectId&quot;:&quot;controle-clinico-angela&quot;,&quot;storageBucket&quot;:&quot;controle-clinico-angela.firebasestorage.app&quot;,&quot;messagingSenderId&quot;:&quot;309883171482&quot;,&quot;appId&quot;:&quot;1:309883171482:web:8e3a459caae7f6981a6523&quot;}">
   <title>Controle Clínico</title>
   <style>
 /* Visual base: Agenda Digital (deep green desk calendar), adapted for the clinic. */
@@ -141,6 +142,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .backup-pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); font-weight: 600; font-size: 0.8rem; cursor: pointer; }
 .backup-pill--reautorizar { border-color: var(--dot-orange); }
 .backup-pill--erro { border-color: var(--dot-red); color: var(--danger); }
+.cloud-pill--sem-acesso, .cloud-pill--erro { border-color: var(--dot-red); color: var(--danger); }
+.cloud-pill--offline { border-color: var(--dot-orange); }
+/* Before sign-in only the sign-in card shows: no records, no notebook. */
+.cloud-locked #toolbar, .cloud-locked #side, .cloud-locked .tabs { display: none; }
+body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-columns: minmax(0, 1fr); }
+.signin { display: grid; place-items: center; min-height: 60vh; padding: 24px 0; }
+.signin__card { max-width: 560px; text-align: center; padding: 36px 28px; }
+.signin__title { font-size: 1.7rem; font-weight: 700; margin-bottom: 14px; }
+.signin__text { font-size: 1.15rem; line-height: 1.55; margin-bottom: 26px; }
+.btn.signin__button { font-size: 1.25rem; padding: 16px 34px; }
 #backupBanner .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0 0; }
 .backup-status { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; }
 .stack--tight { gap: 8px; }
@@ -1122,6 +1133,15 @@ function saveDataset(dataset) {
   }
 }
 
+/** Removes this browser's copy of the records (after signing out of the cloud). */
+function forgetSavedDataset() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Nothing was saved.
+  }
+}
+
 function readEmbeddedDataset(documentRef = document) {
   const text = documentRef.getElementById('dados-iniciais')?.textContent.trim();
   if (!text) return null;
@@ -1139,7 +1159,7 @@ function downloadJson(fileName, data) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-return { loadSavedDataset, saveDataset, readEmbeddedDataset, downloadJson };
+return { loadSavedDataset, saveDataset, forgetSavedDataset, readEmbeddedDataset, downloadJson };
 })();
 modules["domain/billing-policy.js"] = (() => {
 const { minutesOf } = modules["lib/dates.js"];
@@ -3465,6 +3485,456 @@ function renderBackupIndicator(container, status, backup, openSettings) {
 
 return { backupSnapshot, backupStatusText, reconnectBackup, backupStatusLine, refreshBackupStatus, renderBackupIndicator };
 })();
+modules["domain/cloud-parts.js"] = (() => {
+// The records go to the cloud in parts, one Firestore document each (a document holds at
+// most 1 MiB): the lists in a few parts, the sessions one part per year, the rest in "base".
+// Only the parts that changed are written, and a device rebuilds the dataset from all parts.
+
+const LIST_PARTS = Object.freeze({
+  pacientes: 'patients',
+  pagamentos: 'payments',
+  'depositos-pendentes': 'unassignedPayments',
+  relatorio: 'report',
+});
+const SESSIONS_PREFIX = 'sessoes-';
+const BASE_PART = 'base';
+const NOTEPAD_PART = 'caderno';
+
+const yearOf = (session) => (/^\d{4}/.test(session.date ?? '') ? session.date.slice(0, 4) : 'sem-data');
+
+/**
+ * Splits the dataset and the notebook into parts, as JSON text keyed by part id.
+ * The notebook keeps only its content, so receiving it never counts as a new change.
+ */
+function splitIntoParts(dataset, notepad = null) {
+  const listKeys = new Set(Object.values(LIST_PARTS));
+  const base = Object.fromEntries(Object.entries(dataset).filter(([key]) => key !== 'sessions' && !listKeys.has(key)));
+  const parts = new Map([[BASE_PART, JSON.stringify(base)]]);
+  Object.entries(LIST_PARTS).forEach(([part, key]) => parts.set(part, JSON.stringify(dataset[key] ?? null)));
+  const sessionsByYear = new Map();
+  (dataset.sessions ?? []).forEach((session) => {
+    const part = SESSIONS_PREFIX + yearOf(session);
+    if (!sessionsByYear.has(part)) sessionsByYear.set(part, []);
+    sessionsByYear.get(part).push(session);
+  });
+  [...sessionsByYear.keys()].sort().forEach((part) => parts.set(part, JSON.stringify(sessionsByYear.get(part))));
+  if (notepad) parts.set(NOTEPAD_PART, JSON.stringify({ html: notepad.html ?? '', text: notepad.text ?? '' }));
+  return parts;
+}
+
+/** Rebuilds the dataset (sessions in date order) and the notebook; null while there is no base part. */
+function joinParts(parts) {
+  if (!parts.has(BASE_PART)) return null;
+  const dataset = JSON.parse(parts.get(BASE_PART));
+  Object.entries(LIST_PARTS).forEach(([part, key]) => {
+    const value = parts.has(part) ? JSON.parse(parts.get(part)) : null;
+    dataset[key] = value ?? (key === 'report' ? null : []);
+  });
+  dataset.sessions = [...parts.keys()]
+    .filter((part) => part.startsWith(SESSIONS_PREFIX))
+    .sort()
+    .flatMap((part) => JSON.parse(parts.get(part)));
+  const notepad = parts.has(NOTEPAD_PART) ? JSON.parse(parts.get(NOTEPAD_PART)) : null;
+  return { dataset, notepad };
+}
+
+/** What to write so that `remote` becomes `local`: changed parts and parts that no longer exist. */
+function diffParts(local, remote) {
+  const changed = [...local].filter(([part, json]) => remote.get(part) !== json);
+  const removed = [...remote.keys()].filter((part) => !local.has(part) && part !== NOTEPAD_PART);
+  return { changed, removed };
+}
+
+return { splitIntoParts, joinParts, diffParts };
+})();
+modules["infra/cloud-sync.js"] = (() => {
+const { diffParts, joinParts, splitIntoParts } = modules["domain/cloud-parts.js"];
+// Keeps the records in Firestore so every device signed in with an authorized Google account
+// sees the same data. Firestore's cache in the browser keeps the app working without
+// internet: changes wait there and go up when the connection returns.
+
+const SDK_DIR = './vendor/firebase/';
+const COLLECTION = 'consultorio';
+const SAVE_DELAY_MS = 800;
+// Set while this device has changes the cloud has not confirmed (the tab may close before
+// they are sent): on the next start, this device's records win over the cloud's copy.
+const PENDING_KEY = 'controle-clinico/nuvem-pendente';
+
+function setPending(pending) {
+  try {
+    if (pending) localStorage.setItem(PENDING_KEY, '1');
+    else localStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Without storage the flag only lasts for this visit.
+  }
+}
+
+function hasPending() {
+  try {
+    return localStorage.getItem(PENDING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+const CLOUD_STATE = Object.freeze({
+  LOADING: 'carregando',
+  SIGNED_OUT: 'sem-login',
+  SYNCED: 'sincronizado',
+  SAVING: 'salvando',
+  OFFLINE: 'offline',
+  DENIED: 'sem-acesso',
+  ERROR: 'erro',
+});
+
+/** The hosted build names its Firebase project in <meta name="firebase-config">; null elsewhere. */
+function readCloudConfig(documentRef = document) {
+  const content = documentRef.querySelector('meta[name="firebase-config"]')?.content;
+  if (!content) return null;
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+/** Tests only: <meta name="firebase-emulator" content="localhost"> points the app at local emulators. */
+const readEmulatorHost = (documentRef = document) => documentRef.querySelector('meta[name="firebase-emulator"]')?.content || null;
+
+function createFirestore(store, firebaseApp) {
+  try {
+    return store.initializeFirestore(firebaseApp, { localCache: store.persistentLocalCache({ tabManager: store.persistentMultipleTabManager() }) });
+  } catch {
+    // Without IndexedDB (e.g. a private window) the data stays in memory for this visit.
+    return store.initializeFirestore(firebaseApp, { localCache: store.memoryLocalCache() });
+  }
+}
+
+/**
+ * @param {object} options
+ * @param {object} options.config Firebase web config of the project
+ * @param {string|null} [options.emulatorHost] tests only
+ * @param {() => {dataset: object, notepad: object|null}} options.current what this device holds now
+ * @param {(remote: {dataset: object, notepad: object|null}) => void} options.onRemote records that came from the cloud
+ * @param {() => void} options.onEmptyCloud the cloud has no records yet (first use)
+ * @param {(status: {state: string, email: string, error: string}) => void} options.onStatus
+ */
+async function startCloudSync({ config, emulatorHost = null, current, onRemote, onEmptyCloud, onStatus }) {
+  const [{ initializeApp }, auth, store] = await Promise.all([
+    import(`${SDK_DIR}firebase-app.js`),
+    import(`${SDK_DIR}firebase-auth.js`),
+    import(`${SDK_DIR}firebase-firestore.js`),
+  ]);
+  const firebaseApp = initializeApp(config);
+  const authInstance = auth.getAuth(firebaseApp);
+  const db = createFirestore(store, firebaseApp);
+  if (emulatorHost) {
+    auth.connectAuthEmulator(authInstance, `http://${emulatorHost}:9099`, { disableWarnings: true });
+    store.connectFirestoreEmulator(db, emulatorHost, 8080);
+  }
+
+  let status = { state: CLOUD_STATE.LOADING, email: '', error: '' };
+  // What the cloud holds, as far as this device knows. Nothing is written before the cloud
+  // has been read at least once: a device with old records must not overwrite newer ones.
+  let known = new Map();
+  let ready = false;
+  let unsubscribe = null;
+  let timer = null;
+  let writesInFlight = 0;
+  let closed = false;
+
+  const update = (patch) => {
+    status = { ...status, ...patch };
+    onStatus(status);
+  };
+  const failure = (error) =>
+    update(error?.code === 'permission-denied' ? { state: CLOUD_STATE.DENIED, error: '' } : { state: CLOUD_STATE.ERROR, error: error?.message ?? String(error) });
+
+  function stateOf(metadata) {
+    if (metadata.fromCache && !navigator.onLine) return CLOUD_STATE.OFFLINE;
+    if (metadata.hasPendingWrites) return CLOUD_STATE.SAVING;
+    return metadata.fromCache ? CLOUD_STATE.LOADING : CLOUD_STATE.SYNCED;
+  }
+
+  function receive(snapshot) {
+    const { metadata } = snapshot;
+    update({ state: stateOf(metadata), error: '' });
+    if (snapshot.empty) {
+      // An empty cache says nothing about the cloud; only the server can say it is empty.
+      if (!metadata.fromCache && !ready) {
+        ready = true;
+        known = new Map();
+        onEmptyCloud();
+      }
+      return;
+    }
+    const parts = new Map(snapshot.docs.map((document) => [document.id, document.data().json]));
+    known = parts;
+    ready = true;
+    // While a save is waiting or unconfirmed, the snapshot only echoes this device's own records;
+    // a snapshot from the cache is this device's earlier copy. Only the server brings other devices' changes.
+    if (metadata.hasPendingWrites || timer || metadata.fromCache) return;
+    if (hasPending()) {
+      write();
+      return;
+    }
+    const remote = joinParts(parts);
+    const local = current();
+    const { changed, removed } = diffParts(splitIntoParts(local.dataset, local.notepad), parts);
+    if (remote && (changed.length || removed.length)) onRemote(remote);
+  }
+
+  function listen() {
+    unsubscribe?.();
+    unsubscribe = store.onSnapshot(store.collection(db, COLLECTION), { includeMetadataChanges: true }, receive, failure);
+  }
+
+  async function write() {
+    clearTimeout(timer);
+    timer = null;
+    if (!ready || !authInstance.currentUser) return;
+    const local = current();
+    // A device without patients (fresh, or just signed out) never overwrites the cloud's records.
+    if (!local.dataset.patients?.length && known.size) {
+      setPending(false);
+      return;
+    }
+    const parts = splitIntoParts(local.dataset, local.notepad);
+    const { changed, removed } = diffParts(parts, known);
+    if (!changed.length && !removed.length) {
+      if (!writesInFlight) setPending(false);
+      return;
+    }
+    const batch = store.writeBatch(db);
+    changed.forEach(([part, json]) => batch.set(store.doc(db, COLLECTION, part), { json, updatedAt: store.serverTimestamp() }));
+    removed.forEach((part) => batch.delete(store.doc(db, COLLECTION, part)));
+    known = new Map([...known, ...changed]);
+    removed.forEach((part) => known.delete(part));
+    update({ state: navigator.onLine ? CLOUD_STATE.SAVING : CLOUD_STATE.OFFLINE });
+    // Offline, the promise only settles when the connection returns; the cache already has the change.
+    writesInFlight += 1;
+    batch
+      .commit()
+      .then(() => {
+        writesInFlight -= 1;
+        if (!writesInFlight && !timer) setPending(false);
+      })
+      .catch((error) => {
+        writesInFlight -= 1;
+        failure(error);
+      });
+  }
+
+  auth.onAuthStateChanged(authInstance, (user) => {
+    known = new Map();
+    ready = false;
+    if (!user) {
+      unsubscribe?.();
+      unsubscribe = null;
+      update({ state: CLOUD_STATE.SIGNED_OUT, email: '', error: '' });
+      return;
+    }
+    update({ state: CLOUD_STATE.LOADING, email: user.email ?? '', error: '' });
+    listen();
+  });
+  window.addEventListener('online', () => update({ state: status.state === CLOUD_STATE.OFFLINE ? CLOUD_STATE.LOADING : status.state }));
+  window.addEventListener('offline', () => update({ state: CLOUD_STATE.OFFLINE }));
+
+  return {
+    status: () => status,
+
+    /** Opens Google's account window; must run from a click. */
+    async signIn() {
+      const provider = new auth.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      try {
+        await auth.signInWithPopup(authInstance, provider);
+      } catch (error) {
+        if (error?.code === 'auth/popup-blocked') return auth.signInWithRedirect(authInstance, provider);
+        if (error?.code !== 'auth/popup-closed-by-user' && error?.code !== 'auth/cancelled-popup-request') failure(error);
+      }
+    },
+
+    /** For an account without access: back to Google's account window. Must run from a click. */
+    async switchAccount() {
+      await auth.signOut(authInstance);
+      return this.signIn();
+    },
+
+    /** Signs out and removes this device's copy of the records (for a borrowed device). */
+    async signOut() {
+      closed = true;
+      clearTimeout(timer);
+      timer = null;
+      setPending(false);
+      unsubscribe?.();
+      unsubscribe = null;
+      await auth.signOut(authInstance);
+      await store.terminate(db);
+      await store.clearIndexedDbPersistence(db).catch(() => null);
+    },
+
+    /** Saves shortly after the last change, so a burst of edits makes one write. */
+    schedule() {
+      if (closed) return;
+      setPending(true);
+      clearTimeout(timer);
+      timer = setTimeout(write, SAVE_DELAY_MS);
+    },
+
+    /** Writes now if a save is waiting (e.g. when the page is being hidden). */
+    flush() {
+      if (timer) write();
+    },
+
+    /** Tests only (emulator): signs in with a made-up Google account. */
+    signInForTest: emulatorHost
+      ? (email) => auth.signInWithCredential(authInstance, auth.GoogleAuthProvider.credential(JSON.stringify({ sub: email, email, email_verified: true })))
+      : null,
+  };
+}
+
+return { CLOUD_STATE, readCloudConfig, readEmulatorHost, startCloudSync };
+})();
+modules["ui/cloud-session.js"] = (() => {
+const { migrateDataset } = modules["domain/migrations.js"];
+const { CLOUD_STATE, readCloudConfig, readEmulatorHost, startCloudSync } = modules["infra/cloud-sync.js"];
+const { forgetSavedDataset } = modules["infra/storage.js"];
+const { button, card, toast } = modules["ui/components.js"];
+const { h, replaceChildren } = modules["ui/dom.js"];
+const { NOTEPAD_SAVED_EVENT, readNotepad, replaceNotepad } = modules["ui/notepad.js"];
+const LABELS = {
+  [CLOUD_STATE.LOADING]: 'Conectando…',
+  [CLOUD_STATE.SIGNED_OUT]: 'Entrar',
+  [CLOUD_STATE.SYNCED]: 'Salvo na nuvem',
+  [CLOUD_STATE.SAVING]: 'Salvando…',
+  [CLOUD_STATE.OFFLINE]: 'Sem internet: salvo neste aparelho',
+  [CLOUD_STATE.DENIED]: 'Sem acesso',
+  [CLOUD_STATE.ERROR]: 'Erro ao salvar na nuvem',
+};
+const TONE = {
+  [CLOUD_STATE.LOADING]: 'gray',
+  [CLOUD_STATE.SIGNED_OUT]: 'yellow',
+  [CLOUD_STATE.SYNCED]: 'blue',
+  [CLOUD_STATE.SAVING]: 'green',
+  [CLOUD_STATE.OFFLINE]: 'orange',
+  [CLOUD_STATE.DENIED]: 'red',
+  [CLOUD_STATE.ERROR]: 'red',
+};
+
+/** The hosted build keeps the records in the cloud; the single file opened from disk does not. */
+const isCloudBuild = () => readCloudConfig() !== null;
+
+/** Until someone with access signs in, no record is shown. */
+const needsSignIn = (app) => [CLOUD_STATE.SIGNED_OUT, CLOUD_STATE.DENIED].includes(app.cloud?.status.state);
+
+const dot = (state) => h('span', { class: 'dot-signals' }, h('span', { class: `dot-signal dot-signal--${TONE[state]}` }, h('span', { class: 'geo-dot' })));
+
+function renderIndicator(app) {
+  const { state } = app.cloud.status;
+  const onClick = state === CLOUD_STATE.SIGNED_OUT ? () => app.cloud.api?.signIn() : () => app.setUi({ view: 'configuracoes', patientId: null });
+  replaceChildren(
+    document.getElementById('backupIndicator'),
+    h('button', { type: 'button', class: `backup-pill cloud-pill--${state}`, title: LABELS[state], onClick }, dot(state), LABELS[state]),
+  );
+}
+
+async function signOutHere(app) {
+  if (!confirm('Sair desta conta neste aparelho?\n\nOs dados continuam na nuvem; só a cópia deste aparelho é apagada.')) return;
+  await app.cloud.api?.signOut();
+  forgetSavedDataset();
+  replaceNotepad({ html: '', text: '' });
+  location.reload();
+}
+
+/** Full-page sign-in: one big button, nothing else to understand. */
+function renderSignIn(app) {
+  const { state, email } = app.cloud.status;
+  const denied = state === CLOUD_STATE.DENIED;
+  return h(
+    'div',
+    { class: 'signin' },
+    card(
+      { class: 'signin__card' },
+      h('h2', { class: 'signin__title' }, 'Controle Clínico'),
+      denied
+        ? h('p', { class: 'signin__text' }, `A conta ${email} não tem acesso a estes dados. Entre com a conta autorizada.`)
+        : h('p', { class: 'signin__text' }, 'Entre com a sua conta Google para ver e salvar os dados do consultório. Basta fazer isso uma vez em cada aparelho.'),
+      h(
+        'button',
+        { type: 'button', class: 'btn btn--primary signin__button', onClick: () => (denied ? app.cloud.api?.switchAccount() : app.cloud.api?.signIn()) },
+        denied ? 'Entrar com outra conta Google' : 'Entrar com Google',
+      ),
+    ),
+  );
+}
+
+/** Settings card: who is signed in, where the data is, and how to leave a borrowed device. */
+function cloudCard(app) {
+  const { state, email } = app.cloud.status;
+  return card(
+    {},
+    h('h3', { class: 'card-title' }, 'Nuvem'),
+    h('p', {}, dot(state), ' ', LABELS[state], email ? ` · conta ${email}` : ''),
+    h(
+      'p',
+      { class: 'muted' },
+      'Cada alteração é salva sozinha na nuvem do Google (servidor em São Paulo) e aparece em segundos nos outros aparelhos em que você entrou com esta conta. Sem internet, o sistema continua funcionando e envia tudo quando a conexão volta.',
+    ),
+    h('div', { class: 'page-actions' }, button('Sair e apagar os dados deste aparelho', { variant: 'ghost', onClick: () => signOutHere(app) })),
+  );
+}
+
+/**
+ * Connects the app to the cloud: sign-in, records that change on other devices, and a save
+ * shortly after every change here (the notebook included).
+ */
+async function startCloud(app) {
+  app.cloud = { status: { state: CLOUD_STATE.LOADING, email: '', error: '' }, api: null };
+  const onStatus = (status) => {
+    const wasLocked = needsSignIn(app);
+    app.cloud.status = status;
+    renderIndicator(app);
+    document.body.classList.toggle('cloud-locked', needsSignIn(app));
+    if (wasLocked !== needsSignIn(app) || app.ui.view === 'configuracoes') app.setUi({});
+    if (status.state === CLOUD_STATE.ERROR) toast(`Não foi possível salvar na nuvem: ${status.error}`, 'danger');
+  };
+  renderIndicator(app);
+  try {
+    app.cloud.api = await startCloudSync({
+      config: readCloudConfig(),
+      emulatorHost: readEmulatorHost(),
+      current: () => ({ dataset: app.dataset, notepad: readNotepad() }),
+      onRemote: ({ dataset, notepad }) => {
+        const records = migrateDataset(dataset);
+        if (records) app.commit(records);
+        const here = readNotepad();
+        if (notepad && (notepad.html !== here.html || notepad.text !== here.text)) replaceNotepad(notepad);
+      },
+      onEmptyCloud: () => {
+        const count = app.dataset.patients.length;
+        if (count && confirm(`A nuvem ainda está vazia.\n\nEnviar para a nuvem os dados deste aparelho (${count} pacientes)?`)) setTimeout(() => app.cloud.api?.schedule());
+      },
+      onStatus,
+    });
+  } catch (error) {
+    onStatus({ state: CLOUD_STATE.ERROR, email: '', error: error.message });
+    return;
+  }
+  // Tests only: the emulator build lets the browser tests sign in without Google's window.
+  if (readEmulatorHost()) window.controleClinicoCloud = app.cloud.api;
+  let lastDataset = app.dataset;
+  app.subscribe(() => {
+    if (app.dataset === lastDataset) return;
+    lastDataset = app.dataset;
+    app.cloud.api.schedule();
+  });
+  window.addEventListener(NOTEPAD_SAVED_EVENT, () => app.cloud.api.schedule());
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && app.cloud.api.flush());
+}
+
+return { isCloudBuild, needsSignIn, renderSignIn, cloudCard, startCloud };
+})();
 modules["ui/views/data.js"] = (() => {
 const { migrateDataset } = modules["domain/migrations.js"];
 const { saveSettings } = modules["domain/mutations.js"];
@@ -3476,6 +3946,7 @@ const { button, card, field, pageHeader, signalLabel, table, toast } = modules["
 const { LED_MOTION, readLedMotion, saveLedMotion, systemReducesMotion } = modules["ui/appearance.js"];
 const { backupSnapshot, backupStatusLine, reconnectBackup } = modules["ui/backup-status.js"];
 const { formatInteger, formatMoney, h } = modules["ui/dom.js"];
+const { cloudCard } = modules["ui/cloud-session.js"];
 const { replaceNotepad } = modules["ui/notepad.js"];
 const showDate = (value) => (isIsoDate(value) ? formatDate(value) : `"${value}"`);
 
@@ -3826,6 +4297,7 @@ function appearanceCard() {
 }
 
 function backupCard(app) {
+  const inCloud = Boolean(app.cloud);
   const restoreInput = h('input', {
     type: 'file',
     accept: '.json,application/json',
@@ -3849,7 +4321,13 @@ function backupCard(app) {
   return card(
     {},
     h('h3', { class: 'card-title' }, 'Backup'),
-    h('p', { class: 'muted' }, 'Os dados ficam neste navegador, neste computador; nada é enviado a servidor algum. Limpar os dados do navegador apaga os registros: mantenha o backup automático ligado ou exporte com frequência.'),
+    h(
+      'p',
+      { class: 'muted' },
+      inCloud
+        ? 'Os dados já ficam na nuvem. Use "Exportar backup" se quiser uma cópia extra num arquivo.'
+        : 'Os dados ficam neste navegador, neste computador; nada é enviado a servidor algum. Limpar os dados do navegador apaga os registros: mantenha o backup automático ligado ou exporte com frequência.',
+    ),
     automaticBackup(app),
     h('h4', {}, 'Backup manual'),
     h(
@@ -3859,11 +4337,13 @@ function backupCard(app) {
       button('Restaurar backup', { variant: 'secondary', onClick: () => restoreInput.click() }),
       restoreInput,
     ),
-    h(
-      'p',
-      { class: 'muted' },
-      'Para abrir em outro equipamento (outro computador, celular ou tablet): copie o arquivo do sistema e o backup .json para ele, abra o sistema e use "Restaurar backup". O caderno de borrão vai junto. Cada equipamento guarda a sua cópia: ao voltar para o computador, restaure o backup mais recente para não perder o que foi feito no outro.',
-    ),
+    inCloud
+      ? null
+      : h(
+          'p',
+          { class: 'muted' },
+          'Para abrir em outro equipamento (outro computador, celular ou tablet): copie o arquivo do sistema e o backup .json para ele, abra o sistema e use "Restaurar backup". O caderno de borrão vai junto. Cada equipamento guarda a sua cópia: ao voltar para o computador, restaure o backup mais recente para não perder o que foi feito no outro.',
+        ),
   );
 }
 
@@ -3875,6 +4355,7 @@ function renderSettings(app) {
     settingsCard(app),
     datesAndInfoCard(app),
     appearanceCard(),
+    app.cloud ? cloudCard(app) : null,
     backupCard(app),
   );
 }
@@ -6462,6 +6943,7 @@ const { NOTEPAD_SAVED_EVENT } = modules["ui/notepad.js"];
 const { applyLedMotion } = modules["ui/appearance.js"];
 const { createSidePanel } = modules["ui/side-panel.js"];
 const { registerOfflineCache } = modules["infra/offline-cache.js"];
+const { isCloudBuild, needsSignIn, renderSignIn, startCloud } = modules["ui/cloud-session.js"];
 const VIEWS = [
   { id: 'painel', label: 'Painel geral', render: renderHub },
   { id: 'pacientes', label: 'Pacientes', render: renderPatients },
@@ -6525,6 +7007,7 @@ function renderToolbar(app) {
 }
 
 function renderNav(app) {
+  if (needsSignIn(app)) return [];
   return VIEWS.map((view) =>
     h(
       'button',
@@ -6540,6 +7023,7 @@ function renderNav(app) {
 }
 
 function renderView(app) {
+  if (needsSignIn(app)) return renderSignIn(app);
   const view = VIEWS.find((candidate) => candidate.id === app.ui.view) ?? VIEWS[0];
   const warning = app.saveFailed
     ? h('div', { class: 'banner banner--danger', role: 'alert' }, 'Não foi possível salvar neste navegador (armazenamento bloqueado ou cheio). Exporte um backup em Configurações para não perder os registros.')
@@ -6615,7 +7099,9 @@ function start() {
   }
   const today = todayIso();
   const app = createApp({ dataset: initialDataset(today), today, persist: saveDataset });
-  startBackup(app);
+  // The hosted version keeps the records in the cloud; the file opened from disk backs up to a file.
+  if (isCloudBuild()) startCloud(app);
+  else startBackup(app);
   const nav = document.getElementById('nav');
   const main = document.getElementById('main');
   document.getElementById('headerSub').textContent = `Hoje · ${formatDateLong(today)}`;
