@@ -454,6 +454,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .prompt__text { font-size: 1.2rem; line-height: 1.5; }
 .prompt__actions { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 6px; }
 .dropzone { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 2.2rem 1rem; border: 3px dashed var(--border); border-radius: var(--radius); background: none; cursor: pointer; font-size: 1.05rem; }
+.dropzone:disabled { opacity: 0.5; cursor: not-allowed; }
 .dropzone:hover { border-color: var(--accent); background: var(--today-bg); }
 .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 12px 18px; border-radius: 999px; font-weight: 600; box-shadow: var(--shadow); z-index: 10; }
 .toast--success { background: var(--accent); color: var(--on-accent); }
@@ -4456,6 +4457,10 @@ const { backupRestoreInput, confirmReplace, datasetSummary } = modules["ui/repla
 const { workHoursInputs } = modules["ui/work-hours.js"];
 const showDate = (value) => (isIsoDate(value) ? formatDate(value) : `"${value}"`);
 
+/**
+ * Re-importing the spreadsheet replaces every record, including what was registered in the system
+ * since: behind a warning and a box to tick, so it cannot happen by a slip.
+ */
 function importCard(app) {
   const status = h('p', { class: 'muted', role: 'status' });
   const fileInput = h('input', {
@@ -4477,14 +4482,23 @@ function importCard(app) {
       }
     },
   });
+  const dropzone = h(
+    'button',
+    { type: 'button', class: 'dropzone', disabled: true, onClick: () => fileInput.click() },
+    h('strong', {}, 'Clique para selecionar a planilha Excel'),
+    h('span', { class: 'muted' }, 'Formato da planilha "1 765 CONTROLE SESSÕES" · .xlsx · funciona sem internet'),
+  );
+  const understood = h('input', { type: 'checkbox', onChange: () => (dropzone.disabled = !understood.checked) });
   return card(
     {},
+    h('h3', { class: 'card-title' }, 'Importar a planilha de novo'),
     h(
-      'button',
-      { type: 'button', class: 'dropzone', onClick: () => fileInput.click() },
-      h('strong', {}, 'Clique para selecionar a planilha Excel'),
-      h('span', { class: 'muted' }, 'Formato da planilha "1 765 CONTROLE SESSÕES" · .xlsx · funciona sem internet'),
+      'p',
+      { class: 'banner banner--danger' },
+      'Atenção: importar a planilha substitui TODOS os dados. Apaga o que foi registrado no sistema depois da importação: sessões, agendamentos, remarcações e pagamentos. Não é preciso para usar o sistema; antes, exporte um backup.',
     ),
+    h('label', { class: 'check' }, understood, h('span', {}, 'Entendo que isso apaga o que foi registrado no sistema.')),
+    dropzone,
     fileInput,
     status,
     h('p', { class: 'muted' }, `Dados atuais: ${datasetSummary(app.dataset)}${app.dataset.source?.fileName ? `, importados de "${app.dataset.source.fileName}" em ${formatDate(app.dataset.source.importedAt)}` : ''}.`),
@@ -4611,10 +4625,14 @@ function renderImport(app) {
   return h(
     'div',
     { class: 'stack' },
-    pageHeader('Importar planilha', 'Lê todas as abas de pacientes, de todos os anos, e mostra a conferência do que entrou.'),
-    importCard(app),
+    pageHeader(
+      'Planilha antiga',
+      'De onde vieram os pacientes, as sessões e os valores até a importação. Daqui em diante tudo é registrado no sistema; a planilha fica só como histórico.',
+      button('‹ Voltar para Configurações', { variant: 'ghost', onClick: () => app.setUi({ view: 'configuracoes' }) }),
+    ),
     reconciliationCard(app),
     reportCard(app),
+    importCard(app),
   );
 }
 
@@ -4813,6 +4831,12 @@ function renderSettings(app) {
     appearanceCard(),
     app.cloud ? cloudCard(app) : null,
     backupCard(app),
+    card(
+      {},
+      h('h3', { class: 'card-title' }, 'Planilha antiga'),
+      h('p', {}, 'Os pacientes e o histórico vieram da planilha de controle. Agora tudo é registrado aqui no sistema; a planilha fica só como histórico.'),
+      h('div', { class: 'page-actions' }, button('Ver a conferência da planilha', { variant: 'secondary', onClick: () => app.setUi({ view: 'importar' }) })),
+    ),
   );
 }
 
@@ -8829,7 +8853,9 @@ const VIEWS = [
   { id: 'consolidado', label: 'Fechamento do mês', render: renderMonthly },
   { id: 'financeiro', label: 'Financeiro', render: renderFinance },
   { id: 'indicadores', label: 'Indicadores', render: renderOverview },
-  { id: 'importar', label: 'Importar Excel', render: renderImport },
+  // The spreadsheet is history now: re-importing replaces everything, so it is not a tab but a page
+  // reached from Configurações (decision of 19/10/2026).
+  { id: 'importar', label: 'Planilha antiga', render: renderImport, parent: 'configuracoes' },
   { id: 'configuracoes', label: 'Configurações', render: renderSettings },
 ];
 
@@ -8887,13 +8913,14 @@ function renderToolbar(app) {
 
 function renderNav(app) {
   if (isLocked(app)) return [];
-  return VIEWS.map((view) =>
+  const current = VIEWS.find((view) => view.id === app.ui.view)?.parent ?? app.ui.view;
+  return VIEWS.filter((view) => !view.parent).map((view) =>
     h(
       'button',
       {
         type: 'button',
-        class: `tab${app.ui.view === view.id ? ' is-active' : ''}`,
-        'aria-current': app.ui.view === view.id ? 'page' : null,
+        class: `tab${current === view.id ? ' is-active' : ''}`,
+        'aria-current': current === view.id ? 'page' : null,
         onClick: () => app.setUi({ view: view.id, ...(view.id === 'pacientes' ? { patientId: null } : {}) }),
       },
       view.label,
