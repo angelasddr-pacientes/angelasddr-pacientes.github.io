@@ -342,7 +342,9 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 /* Percentage widths let the table shrink its columns instead of overflowing the page. */
 .table .input:not(.input--time) { width: 100%; max-width: 100%; }
 .table .input--fee { max-width: 6.5rem; }
-.slot-add { flex-wrap: wrap; }
+.table .slot-row .input { width: auto; }
+.cell-dates__date { white-space: nowrap; }
+.table .input--status { min-width: 6.5rem; }
 .cell-sub { margin-top: 5px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .cell-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .cell-grow .input--text { width: 100%; min-width: 0; }
@@ -364,11 +366,20 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .row-pending { background: color-mix(in srgb, var(--dot-yellow) 6%, transparent); }
 .is-expanded { background: var(--today-bg); }
 .detail-row > td { background: var(--bg); }
-.slot-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.slot-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 999px; background: var(--today-bg); font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
-.slot-chip button { border: none; background: none; cursor: pointer; color: var(--muted); padding: 0 4px; font-weight: 700; }
-.slot-add { display: inline-flex; gap: 4px; align-items: center; }
-.slot-add .input { width: auto; }
+/* Patient's fixed days: one line per time a week, the "− N vezes por semana +" counter, frequency. */
+.schedule-cell { display: flex; flex-direction: column; gap: 6px; min-width: 15.5rem; }
+.schedule-cell__hint { font-size: 0.78rem; color: var(--warn); font-weight: 600; }
+.slot-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }
+.slot-row .input { width: auto; }
+.slot-row__remove { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 1.1rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.slot-row__remove:hover { background: var(--danger-soft); color: var(--danger); }
+.input--missing { border-color: var(--dot-yellow); background: color-mix(in srgb, var(--dot-yellow) 10%, var(--card)); }
+.week-count { display: inline-flex; align-items: center; gap: 8px; }
+.week-count__step { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border); background: var(--card); font-size: 1.2rem; font-weight: 700; line-height: 1; cursor: pointer; color: var(--accent); }
+.week-count__step:hover:not(:disabled) { border-color: var(--accent); background: var(--today-bg); }
+.week-count__step:disabled { opacity: 0.4; cursor: default; }
+.week-count__value { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
+.inline-field > span { white-space: nowrap; }
 .session-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .session-lines li { display: grid; grid-template-columns: 5.5rem minmax(9rem, 1fr) minmax(8rem, auto) auto auto auto; gap: 10px; align-items: center; }
 .plain-list { margin: 0; padding-left: 1.2rem; font-size: 0.88rem; }
@@ -425,7 +436,10 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .chart svg { width: 100%; height: auto; display: block; }
 .chart__grid { stroke: var(--border); stroke-width: 1; }
 .chart__axis { fill: var(--muted); font-size: 11px; }
-.chart__bar--primary { fill: var(--accent-bright); background: var(--accent-bright); }
+/* "Valor das sessões" next to "Recebido" (blue): amber, like its KPI card. The pair passes the
+   dataviz validator (normal ΔE 31.7, worst color-blind ΔE 24.7). The blue alone was the same
+   #2d6eb8 as the accent, so the two bars could not be told apart. */
+.chart__bar--billed { fill: #d97706; background: #d97706; }
 .chart__bar--success { fill: var(--dot-blue); background: var(--dot-blue); }
 .chart__bar--danger { fill: var(--dot-red); background: var(--dot-red); }
 .chart__bar--warning { fill: var(--dot-orange); background: var(--dot-orange); }
@@ -866,6 +880,25 @@ const FREQUENCY_LABELS = Object.freeze({
   avulsa: 'Avulsa',
 });
 
+// Frequencies with fixed days, and what "N times" means for each.
+const WEEKLY_COUNT_PERIOD = Object.freeze({ semanal: 'por semana', quinzenal: 'a cada 15 dias', mensal: 'por mês' });
+const MAX_WEEKLY_SESSIONS = 7;
+
+/** "2 vezes por semana", "1 vez a cada 15 dias". */
+const weeklyCountText = (count, frequency) => `${count} ${count === 1 ? 'vez' : 'vezes'} ${WEEKLY_COUNT_PERIOD[frequency] ?? 'por semana'}`;
+
+/**
+ * The fixed days for `count` sessions in the week: each extra one takes the first working day not
+ * used yet, with the time to be filled in; fewer drop the last ones.
+ */
+function withWeeklyCount(schedule, count, workDays) {
+  const target = Math.max(0, Math.min(MAX_WEEKLY_SESSIONS, count));
+  if (target <= schedule.length) return schedule.slice(0, target);
+  const used = new Set(schedule.map((slot) => slot.weekday));
+  const candidates = [...new Set([...workDays, 1, 2, 3, 4, 5, 6, 0])].filter((weekday) => !used.has(weekday));
+  return [...schedule, ...candidates.slice(0, target - schedule.length).map((weekday) => ({ weekday, time: '' }))];
+}
+
 function isActivePatient(patient, lastSessionDate, today) {
   if (patient.status === PATIENT_STATUS.ACTIVE) return true;
   if (patient.status === PATIENT_STATUS.CLOSED) return false;
@@ -907,7 +940,7 @@ function newPatient(fields) {
   };
 }
 
-return { PATIENT_STATUS, FREQUENCY_LABELS, isActivePatient, inferUsualWeekday, newPatient };
+return { PATIENT_STATUS, FREQUENCY_LABELS, WEEKLY_COUNT_PERIOD, MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount, isActivePatient, inferUsualWeekday, newPatient };
 })();
 modules["domain/metrics.js"] = (() => {
 const { monthOf, yearOf } = modules["lib/dates.js"];
@@ -4594,7 +4627,7 @@ return { renderImport, renderSettings };
 modules["ui/forms.js"] = (() => {
 const { noticeHoursBefore, suggestedFee } = modules["domain/billing-policy.js"];
 const { deletePayment, deleteSession, newPayment, newSession, registerPayment, savePatient, saveSession } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS } = modules["domain/patients.js"];
+const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText } = modules["domain/patients.js"];
 const { ATTENDANCE, ATTENDANCE_LABELS, NOTICE_LABELS, PUNCTUALITY, PUNCTUALITY_LABELS } = modules["domain/status.js"];
 const { scheduledSlotsOn } = modules["domain/schedule.js"];
 const { formatMonth, isIsoDate, isTime, monthOf, WEEKDAY_NAMES } = modules["lib/dates.js"];
@@ -4815,24 +4848,45 @@ function confirmDeletePayment(app, payment) {
   toast('Pagamento excluído.');
 }
 
-/** Editable list of weekly slots (weekday + time) for the patient form. */
-function scheduleRowsEditor(initialSlots) {
+/** Editable list of weekly slots (weekday + time) for the patient form: one line per time a week. */
+function scheduleRowsEditor(initialSlots, frequencyOf) {
   const list = h('div', { class: 'stack' });
+  const count = h('strong', { class: 'week-count__value' });
+  const showCount = () => {
+    count.textContent = weeklyCountText(list.querySelectorAll('[data-slot-row]').length, frequencyOf());
+  };
   const element = h('div', { class: 'stack' }, list);
   const addRow = (slot = { weekday: 1, time: '' }) => {
     const weekday = select(WEEKDAY_NAMES.map((name, index) => [String(index), name]), { value: String(slot.weekday), ariaLabel: 'Dia da semana' });
     const time = h('input', { class: 'input', type: 'time', value: slot.time, 'aria-label': 'Horário' });
-    const row = h('div', { class: 'page-actions', dataset: { slotRow: '' } }, weekday, time, button('Remover', { variant: 'ghost', small: true, onClick: () => row.remove() }));
+    const remove = () => {
+      row.remove();
+      showCount();
+    };
+    const row = h('div', { class: 'page-actions', dataset: { slotRow: '' } }, weekday, time, button('Remover', { variant: 'ghost', small: true, onClick: remove }));
     list.append(row);
+    showCount();
   };
   initialSlots.forEach(addRow);
-  element.append(button('+ Adicionar dia', { variant: 'secondary', small: true, onClick: () => addRow() }));
+  showCount();
+  element.append(
+    h(
+      'div',
+      { class: 'page-actions' },
+      count,
+      button('+ Mais uma vez na semana', {
+        variant: 'secondary',
+        small: true,
+        onClick: () => addRow(),
+      }),
+    ),
+  );
   const read = () =>
     [...list.querySelectorAll('[data-slot-row]')].map((row) => {
       const [weekday, time] = row.querySelectorAll('select, input');
       return { weekday: Number(weekday.value), time: time.value };
     });
-  return { element, read };
+  return { element, read, showCount };
 }
 
 function openPatientForm(app, patient = null) {
@@ -4857,7 +4911,8 @@ function openPatientForm(app, patient = null) {
       ),
       notes: h('textarea', { class: 'input', rows: '2', maxlength: '500' }, current.notes),
     };
-    const schedule = scheduleRowsEditor(current.schedule);
+    const schedule = scheduleRowsEditor(current.schedule, () => inputs.frequency.value);
+    inputs.frequency.addEventListener('change', () => schedule.showCount());
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const fee = parseMoneyInput(inputs.defaultFee.value);
@@ -5957,6 +6012,40 @@ function formatDuration(ms) {
 
 return { appointmentKey, isOpenAppointment, dueAppointment, startTimer, elapsedMs, isOvertime, overtimeMinutes, formatElapsed, formatDuration };
 })();
+modules["ui/weekly-count.js"] = (() => {
+const { MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount } = modules["domain/patients.js"];
+const { WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { h } = modules["ui/dom.js"];
+const slotText = (slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()}${slot.time ? ` às ${slot.time}` : ''}`;
+
+/** Asks before dropping fixed days that already have a time; true when it may go ahead. */
+function confirmDroppedSlots(patient, dropped) {
+  const timed = dropped.filter((slot) => slot.time);
+  return !timed.length || confirm(`Tirar ${timed.map(slotText).join(' e ')} dos dias fixos de ${patient.name}?`);
+}
+
+/**
+ * "− 2 vezes por semana +": how many sessions the patient has in the week. Each one is a fixed day
+ * with its own time; "+" adds a day (the first free working day, time to be filled in), "−" drops
+ * the last. `save(schedule)` stores the new list.
+ */
+function weeklyCountControl(app, patient, save) {
+  const count = patient.schedule.length;
+  const setCount = (next) => {
+    if (!confirmDroppedSlots(patient, patient.schedule.slice(Math.max(0, next)))) return;
+    save(withWeeklyCount(patient.schedule, next, app.dataset.settings.workDays));
+  };
+  return h(
+    'div',
+    { class: 'week-count' },
+    h('button', { type: 'button', class: 'week-count__step', 'aria-label': 'Uma vez a menos', disabled: count === 0, onClick: () => setCount(count - 1) }, '−'),
+    h('span', { class: 'week-count__value' }, weeklyCountText(count, patient.frequency)),
+    h('button', { type: 'button', class: 'week-count__step', 'aria-label': 'Uma vez a mais', disabled: count >= MAX_WEEKLY_SESSIONS, onClick: () => setCount(count + 1) }, '+'),
+  );
+}
+
+return { confirmDroppedSlots, weeklyCountControl };
+})();
 modules["ui/agenda-setup.js"] = (() => {
 const { savePatient, saveSettings } = modules["domain/mutations.js"];
 const { FREQUENCY_LABELS } = modules["domain/patients.js"];
@@ -5964,6 +6053,7 @@ const { scheduleGaps } = modules["domain/schedule.js"];
 const { isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
 const { button, select, toast } = modules["ui/components.js"];
 const { h } = modules["ui/dom.js"];
+const { weeklyCountControl } = modules["ui/weekly-count.js"];
 const { workHoursInputs } = modules["ui/work-hours.js"];
 const REGULAR_FREQUENCIES = Object.entries(FREQUENCY_LABELS).filter(([value]) => value !== 'avulsa');
 const WEEKDAYS = WEEKDAY_NAMES.map((name, index) => [String(index), name]);
@@ -5977,7 +6067,7 @@ function gapHint(patient, slot) {
   return patient.scheduleInferred ? 'dia sugerido pelo histórico' : 'falta o horário';
 }
 
-function gapRow(app, { patient, index }) {
+function gapRow(app, { patient, index }, withCount) {
   const key = `${patient.id}|${index}`;
   const slot = patient.schedule?.[index];
   const draft = drafts.get(key) ?? { weekday: String(slot?.weekday ?? 1), time: '', frequency: patient.frequency };
@@ -6008,6 +6098,14 @@ function gapRow(app, { patient, index }) {
     h('label', { class: 'setup-row__field' }, h('span', {}, 'Dia'), weekday),
     h('label', { class: 'setup-row__field' }, h('span', {}, 'Horário'), time),
     h('label', { class: 'setup-row__field' }, h('span', {}, 'Frequência'), frequency),
+    withCount
+      ? h(
+          'div',
+          { class: 'setup-row__field' },
+          h('span', {}, 'Quantas vezes'),
+          weeklyCountControl(app, patient, (schedule) => app.commit(savePatient(app.dataset, { ...patient, schedule, scheduleInferred: false }))),
+        )
+      : null,
     h('span', { class: 'setup-row__actions' }, button('Salvar', { onClick: save }), button('Não tem dia fixo', { variant: 'ghost', onClick: noFixedDay })),
   );
 }
@@ -6037,8 +6135,13 @@ function scheduleGapsForm(app) {
   const gaps = scheduleGaps(app.dataset.patients, app.indexes.activeIds);
   if (!gaps.length) return h('p', { class: 'prompt__text' }, 'Todos os pacientes têm dia e horário. Pode fechar.');
   return [
-    h('p', {}, 'Informe o dia, o horário e a frequência de cada paciente e toque em "Salvar". Cada linha sai daqui assim que é salva.'),
-    h('ul', { class: 'setup-list' }, gaps.map((gap) => gapRow(app, gap))),
+    h(
+      'p',
+      {},
+      'Informe o dia, o horário e a frequência de cada paciente e toque em "Salvar". Quem vem mais de uma vez por semana: toque em "+" e informe o dia e o horário de cada vez. Cada linha sai daqui assim que é salva.',
+    ),
+    // The counter goes on the patient's first line only.
+    h('ul', { class: 'setup-list' }, gaps.map((gap, position) => gapRow(app, gap, gaps.findIndex((other) => other.patient.id === gap.patient.id) === position))),
   ];
 }
 
@@ -6783,7 +6886,7 @@ function renderOverview(app) {
           categories,
           formatValue: (value) => (value >= 1000 ? `${Math.round(value / 100) / 10} mil` : String(value)),
           series: [
-            { label: 'Valor das sessões', tone: 'primary', values: summaries.map((s) => s.billed) },
+            { label: 'Valor das sessões', tone: 'billed', values: summaries.map((s) => s.billed) },
             { label: 'Recebido', tone: 'success', values: receivedByMonth },
           ],
         }),
@@ -6806,13 +6909,14 @@ modules["ui/patients-table.js"] = (() => {
 const { defaultReceivablesSince, receivables } = modules["domain/forecast.js"];
 const { summarizeSessions } = modules["domain/metrics.js"];
 const { savePatient } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, PATIENT_STATUS } = modules["domain/patients.js"];
+const { FREQUENCY_LABELS, PATIENT_STATUS, WEEKLY_COUNT_PERIOD } = modules["domain/patients.js"];
 const { scheduledSlotsOn } = modules["domain/schedule.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
 const { addDaysIso, eachDay, formatDate, isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
 const { button, emptyState, select, signalLabel, table } = modules["ui/components.js"];
 const { formatMoney, formatPercent, h, parseMoneyInput } = modules["ui/dom.js"];
 const { openPatientForm } = modules["ui/forms.js"];
+const { confirmDroppedSlots, weeklyCountControl } = modules["ui/weekly-count.js"];
 const LOOKAHEAD_DAYS = 62;
 const STATUS_OPTIONS = [
   [PATIENT_STATUS.AUTO, 'Automático'],
@@ -6837,26 +6941,69 @@ function nextAppointment(app, patient) {
   return [booked, fromSchedule].filter(Boolean).sort()[0] ?? null;
 }
 
+const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((name, index) => [String(index), name]);
+
+/**
+ * The patient's fixed days: how many times a week (− / +), one line per time with its day and
+ * hour, how often (every week, every 15 days, monthly) and since when. "Avulsa" has no fixed day.
+ */
 function scheduleEditor(app, patient) {
-  const weekdayInput = select(WEEKDAY_NAMES.map((name, index) => [String(index), name.slice(0, 3)]), { value: '1', ariaLabel: 'Dia da semana' });
-  const timeInput = h('input', { class: 'input input--time', type: 'time', 'aria-label': 'Horário' });
-  const add = () => {
-    const slot = { weekday: Number(weekdayInput.value), time: isTime(timeInput.value) ? timeInput.value : '' };
-    app.commit(savePatient(app.dataset, { ...patient, schedule: [...patient.schedule, slot], scheduleInferred: false }));
-  };
-  const remove = (index) => app.commit(savePatient(app.dataset, { ...patient, schedule: patient.schedule.filter((_, i) => i !== index) }));
+  const saveSchedule = (schedule) => updatePatient(app, patient.id, { schedule, scheduleInferred: false });
+  const setSlot = (index, patch) => saveSchedule(patient.schedule.map((slot, position) => (position === index ? { ...slot, ...patch } : slot)));
+  const remove = (index) => confirmDroppedSlots(patient, [patient.schedule[index]]) && saveSchedule(patient.schedule.filter((_, position) => position !== index));
+  const frequency = select(Object.entries(FREQUENCY_LABELS), {
+    value: patient.frequency,
+    ariaLabel: 'Frequência',
+    dataset: { focusKey: `${patient.id}|frequency` },
+    onChange: (event) => updatePatient(app, patient.id, { frequency: event.target.value }),
+  });
+  if (!WEEKLY_COUNT_PERIOD[patient.frequency]) {
+    return h('div', { class: 'schedule-cell' }, h('div', { class: 'cell-inline' }, frequency), h('span', { class: 'muted' }, 'Sem dia fixo: cada sessão é marcada na agenda.'));
+  }
   return h(
     'div',
-    { class: 'slot-chips' },
+    { class: 'schedule-cell' },
+    patient.scheduleInferred && patient.schedule.length ? h('span', { class: 'schedule-cell__hint' }, 'Dia sugerido pelo histórico: confira e informe o horário.') : null,
     patient.schedule.map((slot, index) =>
       h(
-        'span',
-        { class: 'slot-chip', title: patient.scheduleInferred ? 'Dia sugerido pelo histórico; confirme o horário.' : null },
-        `${slotText(slot)}${patient.scheduleInferred ? ' (sugerido)' : ''}`,
-        h('button', { type: 'button', 'aria-label': `Remover ${slotText(slot)}`, onClick: () => remove(index) }, '×'),
+        'div',
+        { class: 'slot-row' },
+        select(WEEKDAY_OPTIONS, {
+          value: String(slot.weekday),
+          ariaLabel: `Dia ${index + 1} de ${patient.name}`,
+          dataset: { focusKey: `${patient.id}|dia${index}` },
+          onChange: (event) => setSlot(index, { weekday: Number(event.target.value) }),
+        }),
+        h('input', {
+          class: `input input--time${slot.time ? '' : ' input--missing'}`,
+          type: 'time',
+          value: slot.time,
+          'aria-label': `Horário ${index + 1} de ${patient.name}`,
+          dataset: { focusKey: `${patient.id}|hora${index}` },
+          onChange: (event) => (!event.target.value || isTime(event.target.value)) && setSlot(index, { time: event.target.value }),
+        }),
+        h('button', { type: 'button', class: 'slot-row__remove', title: 'Tirar este dia', 'aria-label': `Tirar ${WEEKDAY_NAMES[slot.weekday]} de ${patient.name}`, onClick: () => remove(index) }, '×'),
       ),
     ),
-    h('span', { class: 'slot-add' }, weekdayInput, timeInput, button('Adicionar', { variant: 'secondary', small: true, onClick: add })),
+    weeklyCountControl(app, patient, saveSchedule),
+    h(
+      'div',
+      { class: 'cell-inline' },
+      frequency,
+      h(
+        'label',
+        { class: 'inline-field', title: 'Início da agenda; também define as semanas da frequência quinzenal ou mensal.' },
+        h('span', {}, 'desde'),
+        h('input', {
+          class: 'input',
+          type: 'date',
+          value: patient.scheduleStart ?? '',
+          'aria-label': 'Início',
+          dataset: { focusKey: `${patient.id}|scheduleStart` },
+          onChange: (event) => updatePatient(app, patient.id, { scheduleStart: event.target.value || null }),
+        }),
+      ),
+    ),
   );
 }
 
@@ -6875,35 +7022,20 @@ function patientRow(app, patient, openByPatient, since) {
       h('button', { class: 'link', type: 'button', onClick: () => app.setUi({ view: 'pacientes', patientId: patient.id }) }, patient.name),
       h('div', { class: 'cell-sub' }, signalLabel({ tone: isActive ? 'green' : 'gray', label: isActive ? 'Ativo' : 'Inativo' })),
       patient.guardian ? h('div', { class: 'muted' }, `Resp.: ${patient.guardian}`) : null,
-    ),
-    h(
-      'td',
-      { class: 'cell-grow', 'data-label': 'Dias e horários' },
-      scheduleEditor(app, patient),
+      // Under the name, so the table fits beside the side panel.
       h(
         'div',
-        { class: 'cell-sub cell-inline' },
-        select(Object.entries(FREQUENCY_LABELS), {
-          value: patient.frequency,
-          ariaLabel: 'Frequência',
-          dataset: { focusKey: `${patient.id}|frequency` },
-          onChange: (event) => updatePatient(app, patient.id, { frequency: event.target.value }),
+        { class: 'cell-sub' },
+        select(STATUS_OPTIONS, {
+          value: patient.status,
+          ariaLabel: `Situação de ${patient.name}`,
+          className: 'input--status',
+          dataset: { focusKey: `${patient.id}|status` },
+          onChange: (event) => updatePatient(app, patient.id, { status: event.target.value }),
         }),
-        h(
-          'label',
-          { class: 'inline-field', title: 'Início da agenda; também define as semanas da frequência quinzenal ou mensal.' },
-          h('span', {}, 'desde'),
-          h('input', {
-            class: 'input',
-            type: 'date',
-            value: patient.scheduleStart ?? '',
-            'aria-label': 'Início',
-            dataset: { focusKey: `${patient.id}|scheduleStart` },
-            onChange: (event) => updatePatient(app, patient.id, { scheduleStart: event.target.value || null }),
-          }),
-        ),
       ),
     ),
+    h('td', { class: 'cell-grow', 'data-label': 'Dias e horários' }, scheduleEditor(app, patient)),
     h(
       'td',
       { class: 'num', 'data-label': 'Valor acordado' },
@@ -6927,21 +7059,11 @@ function patientRow(app, patient, openByPatient, since) {
     ),
     h(
       'td',
-      { 'data-label': 'Última / próxima' },
-      h('div', {}, formatDate(app.indexes.lastSessionByPatient.get(patient.id))),
-      h('div', { class: 'muted' }, next ? `próxima ${formatDate(next)}` : 'sem próxima'),
+      { class: 'cell-dates', 'data-label': 'Última / próxima' },
+      h('div', { class: 'cell-dates__date' }, formatDate(app.indexes.lastSessionByPatient.get(patient.id))),
+      h('div', { class: 'muted' }, next ? ['próxima ', h('span', { class: 'cell-dates__date' }, formatDate(next))] : 'sem próxima'),
     ),
     h('td', { class: 'num', 'data-label': 'Em aberto', title: `Sessões cobradas sem pagamento desde ${formatDate(since)}` }, open ? formatMoney(open.amount) : '—'),
-    h(
-      'td',
-      { 'data-label': 'Situação' },
-      select(STATUS_OPTIONS, {
-        value: patient.status,
-        ariaLabel: 'Situação',
-        dataset: { focusKey: `${patient.id}|status` },
-        onChange: (event) => updatePatient(app, patient.id, { status: event.target.value }),
-      }),
-    ),
     h('td', { class: 'actions' }, button('Editar', { variant: 'secondary', small: true, onClick: () => openPatientForm(app, patient) })),
   );
 }
@@ -6953,13 +7075,12 @@ function patientsTable(app, patients) {
   const openByPatient = new Map(receivables(app.dataset, since, app.today).map((row) => [row.patientId, row]));
   return table(
     [
-      'Paciente',
+      'Paciente e situação',
       'Dias, horários e frequência',
-      { label: 'Valor acordado', className: 'num' },
+      { label: 'Valor', className: 'num' },
       'Histórico',
       'Última / próxima',
       { label: 'Em aberto', className: 'num' },
-      'Situação',
       '',
     ],
     patients.map((patient) => patientRow(app, patient, openByPatient, since)),
