@@ -147,7 +147,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .stack > .btn { align-self: flex-start; }
 
 /* —— Header and tabs (top chrome, as in the Agenda Digital) —— */
-.app { width: 100%; margin: 0; padding: 16px clamp(12px, 1.6vw, 28px) 48px; }
+.app { --app-pad-x: clamp(12px, 1.6vw, 28px); width: 100%; margin: 0; padding: 16px var(--app-pad-x) 48px; }
+/* The main menu stays at the top while the page scrolls, as in the Agenda do André: the tabs (and the
+   running session's bar, when there is one) on a frosted-glass band across the whole width. Its height
+   is kept in --topbar-h (main.js) so nothing lands under it: a focused field or a link scrolled to,
+   the table headers, the side panel. */
+.topbar { position: sticky; top: 0; z-index: 20; margin: 0 calc(-1 * var(--app-pad-x)); padding: 0 var(--app-pad-x); background-color: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(170%); backdrop-filter: blur(22px) saturate(170%); border-bottom: 1px solid rgba(255, 255, 255, 0.6); box-shadow: 0 8px 18px -12px rgba(13, 34, 59, 0.35); }
+.topbar .tabs { padding: 10px 0; }
+.topbar .session-bar { margin-top: 10px; }
+/* Room for the menu and, inside a table, its header row that also stays at the top. */
+html { scroll-padding-top: calc(var(--topbar-h, 0px) + 48px); }
 .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .header-brand h1 { font-size: 1.35rem; font-weight: 700; color: var(--ink); }
 .header-sub { font-size: 0.8rem; color: var(--muted); }
@@ -186,6 +195,9 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .section-head .card-title { margin: 0; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
 .card--flush { padding: 0; overflow: hidden; }
+/* clip, unlike hidden, does not make the card a scroll box: its table header row can stay below the
+   fixed menu while the page scrolls. */
+@supports (overflow: clip) { .card--flush { overflow: clip; } }
 .card-title { font-size: 1.08rem; font-weight: 700; margin-bottom: 12px; }
 .card h4 { font-size: 0.92rem; margin: 18px 0 6px; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 14px; }
@@ -378,7 +390,6 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .session-bar__status { font-size: 0.9rem; }
 .session-bar__stop { background: #fff; color: var(--ink); }
 .session-bar__stop:hover { background: #e8eef6; }
-.session-bar--running { position: sticky; top: 0; z-index: 5; }
 /* Larger dots, and the outline light on the navy bar. */
 .session-bar .dot-signals { --dot-size: 7px; --led-line: rgba(255, 255, 255, 0.45); --led-fill: rgba(255, 255, 255, 0.1); padding: 4px 7px; }
 /* Past the agreed length: amber, still counting. */
@@ -390,6 +401,8 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
 .table th, .table td { padding: 8px 9px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .table thead th { background: var(--surface-2); font-size: 0.72rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; z-index: 1; overflow-wrap: normal; }
+/* On the page (not in a dialog, which scrolls by itself) the header row stops below the fixed menu. */
+@supports (overflow: clip) { .shell .table thead th { top: var(--topbar-h, 0px); } }
 /* Percentage widths let the table shrink its columns instead of overflowing the page. */
 .table .input:not(.input--time) { width: 100%; max-width: 100%; }
 .table .input--fee { max-width: 6.5rem; }
@@ -516,7 +529,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .side-panel__inner { display: flex; flex-direction: column; gap: 14px; }
 @media (min-width: 1280px) {
   body.side-open .shell { grid-template-columns: minmax(0, 1fr) 21.5rem; }
-  body.side-open .side-panel { display: block; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
+  body.side-open .side-panel { display: block; position: sticky; top: calc(var(--topbar-h, 0px) + 12px); max-height: calc(100vh - var(--topbar-h, 0px) - 60px); overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
 }
 @media (max-width: 1279.98px) {
   .side-panel { display: block; position: fixed; inset: 0 0 0 auto; width: min(24rem, 92vw); z-index: 30; background: var(--bg); border-left: 1px solid var(--border); box-shadow: -12px 0 40px rgb(0 0 0 / 0.18); padding: 14px; overflow-y: auto; transform: translateX(105%); visibility: hidden; transition: transform 0.2s ease, visibility 0.2s; }
@@ -586,7 +599,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 /* —— Phones: table rows stack their cells (still one row per record, no cards) —— */
 @media (max-width: 760px) {
   html { font-size: 16px; }
-  .app { padding: 12px 12px 40px; }
+  .app { --app-pad-x: 12px; padding: 12px var(--app-pad-x) 40px; }
   .table thead { display: none; }
   .table, .table tbody, .table tfoot, .table tr, .table td, .table th { display: block; width: 100%; }
   .table tr { padding: 8px 4px; border-bottom: 1px solid var(--border); }
@@ -626,6 +639,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .tab:not(.is-active):hover, .toolbar .btn--secondary:hover, .agenda-bar .btn--secondary:hover { border-color: var(--accent); }
 /* Without backdrop-filter, 0.55 vanishes into the background: almost opaque, so text stays readable. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar { background-color: var(--glass-solid); }
   .side-card, .cal-wrap, .kpi, .segmented, .backup-pill, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary {
     background-color: var(--glass-solid);
     background-image: none;
@@ -692,6 +706,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 
 @media print {
   .tabs, .toolbar, .agenda-bar .btn, .btn, .legend, .side-panel, #sessionBar, .pending-card { display: none !important; }
+  .topbar { position: static; box-shadow: none; border: none; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .shell { display: block; }
   body { background: #fff; }
   .card, .cal-wrap { box-shadow: none; }
@@ -725,8 +740,10 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
       </div>
     </header>
     <div id="backupBanner"></div>
-    <div id="sessionBar"></div>
-    <nav class="tabs" id="nav" aria-label="Seções"></nav>
+    <div class="topbar" id="topbar">
+      <div id="sessionBar"></div>
+      <nav class="tabs" id="nav" aria-label="Seções"></nav>
+    </div>
     <div class="shell">
       <main id="main" tabindex="-1">
         <noscript>Este sistema precisa de JavaScript ativado no navegador.</noscript>
@@ -9156,6 +9173,9 @@ function start() {
   // The hosted version keeps the records in the cloud; the file opened from disk backs up to a file.
   if (isCloudBuild()) startCloud(app);
   else startBackup(app);
+  // The fixed menu's height, for what must not land under it (styles.css, --topbar-h).
+  const topbar = document.getElementById('topbar');
+  new ResizeObserver(() => document.documentElement.style.setProperty('--topbar-h', `${topbar.offsetHeight}px`)).observe(topbar);
   const nav = document.getElementById('nav');
   const main = document.getElementById('main');
   document.getElementById('headerSub').textContent = `Hoje · ${formatDateLong(today)}`;
