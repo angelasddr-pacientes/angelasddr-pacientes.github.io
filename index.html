@@ -55,14 +55,16 @@
   --shadow: 0 1px 3px rgba(26, 31, 28, 0.06);
   --radius: 14px;
   --radius-sm: 10px;
-  --dot-size: 8px;
-  --dot-gap: 3px;
-  --dot-red: #dc2626;
-  --dot-green: #16a34a;
-  --dot-yellow: #d97706;
+  /* LEDs of the Agenda do André (vps/public/index.html, "seta-pontos"): 5 px dots, 2 px apart;
+     red, green, yellow, blue and light gray are its colors. It has no orange or dark gray LED. */
+  --dot-size: 5px;
+  --dot-gap: 2px;
+  --dot-red: #c0392b;
+  --dot-green: #2db87a;
+  --dot-yellow: #eab308;
   --dot-orange: #ea580c;
-  --dot-blue: #2563eb;
-  --dot-gray: #9ca3af;
+  --dot-blue: #2d6eb8;
+  --dot-gray: #98a2ad;
   --dot-cancel: #374151;
   color-scheme: light;
 }
@@ -174,28 +176,38 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 /* —— Geometric LED signals (same spec as the Agenda Digital) —— */
 .dot-signals { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; flex-shrink: 0; }
 .dot-signal { display: inline-flex; align-items: center; gap: var(--dot-gap); flex-shrink: 0; }
-.geo-dot { display: inline-block; width: var(--dot-size); height: var(--dot-size); min-width: var(--dot-size); border-radius: 50%; flex-shrink: 0; }
-.dot-signal--red .geo-dot { background: var(--dot-red); }
-.dot-signal--orange .geo-dot { background: var(--dot-orange); }
-.dot-signal--green .geo-dot { background: var(--dot-green); }
-.dot-signal--yellow .geo-dot { background: var(--dot-yellow); }
-.dot-signal--blue .geo-dot { background: var(--dot-blue); }
-.dot-signal--gray .geo-dot { background: var(--dot-gray); }
-.dot-signal--cancel .geo-dot { background: var(--dot-cancel); }
-/* Red blinks in sequence (stagger), not in sync; orange and green pulse. */
-/* Timing measured frame by frame on a recording of the Agenda Digital (18/10/2026): every 0.8 s the
-   dots light up one after the other, left to right (about 22 ms apart), stay lit for about 0.1 s
-   and go out in the same order; in between they stay pale. */
-@keyframes led-sweep { 0% { opacity: 0.18; } 3%, 17% { opacity: 1; } 21%, 100% { opacity: 0.18; } }
-.dot-signal--red .geo-dot, .dot-signal--orange .geo-dot, .dot-signal--green .geo-dot { animation: led-sweep 0.8s linear infinite; }
-.dot-signal .geo-dot:nth-child(2) { animation-delay: 22ms; }
-.dot-signal .geo-dot:nth-child(3) { animation-delay: 44ms; }
+.geo-dot { display: inline-block; width: var(--dot-size); height: var(--dot-size); min-width: var(--dot-size); border-radius: 50%; flex-shrink: 0; background: currentColor; }
+.dot-signal--red { color: var(--dot-red); }
+.dot-signal--orange { color: var(--dot-orange); }
+.dot-signal--green { color: var(--dot-green); }
+.dot-signal--yellow { color: var(--dot-yellow); }
+.dot-signal--blue { color: var(--dot-blue); }
+.dot-signal--gray { color: var(--dot-gray); }
+.dot-signal--cancel { color: var(--dot-cancel); }
+/* Calendar: compact LEDs, as in the Agenda's day cells. */
+.day-cell, .week-day__marks { --dot-size: 4px; }
+/* The Agenda's appointment LEDs (05/10): every 800 ms the dots light up from left to right, one step
+   (24 ms = 3%) apart, each fading in 88 ms (11%) and glowing; once the last is lit, they go out in the
+   same order, fading 88 ms; pale in between. Keyframes for 2 dots are the Agenda's (cdot2_*); 1 and 3
+   dots follow the same rule (on at 3%·i + 11%, lit until the last is on, off 11% later).
+   Red, orange and green blink; the other colors stay lit. */
+@keyframes led1-1 { 0% { opacity: 0.15; box-shadow: none; } 11% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; } 22%, 100% { opacity: 0.15; box-shadow: none; } }
+@keyframes led2-1 { 0% { opacity: 0.15; box-shadow: none; } 11%, 14% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; } 25%, 100% { opacity: 0.15; box-shadow: none; } }
+@keyframes led2-2 { 0%, 3% { opacity: 0.15; box-shadow: none; } 14%, 17% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; } 28%, 100% { opacity: 0.15; box-shadow: none; } }
+@keyframes led3-1 { 0% { opacity: 0.15; box-shadow: none; } 11%, 17% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; } 28%, 100% { opacity: 0.15; box-shadow: none; } }
+@keyframes led3-2 { 0%, 3% { opacity: 0.15; box-shadow: none; } 14%, 20% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; } 31%, 100% { opacity: 0.15; box-shadow: none; } }
+@keyframes led3-3 { 0%, 6% { opacity: 0.15; box-shadow: none; } 17%, 23% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; } 34%, 100% { opacity: 0.15; box-shadow: none; } }
+:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot { animation: 800ms ease-in-out infinite; }
+:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot:only-child { animation-name: led1-1; }
+:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot:nth-child(1):nth-last-child(2) { animation-name: led2-1; }
+:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot:nth-child(2):nth-last-child(1) { animation-name: led2-2; }
+:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot:nth-child(1):nth-last-child(3) { animation-name: led3-1; }
+:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot:nth-child(2):nth-last-child(2) { animation-name: led3-2; }
+:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot:nth-child(3):nth-last-child(1) { animation-name: led3-3; }
 /* Like the Agenda Digital, LEDs respect the system's "reduce motion"; the user may ask the
    app to keep them blinking anyway (Configurações › Aparência sets data-leds="sempre"). */
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-leds="sempre"]) .dot-signal--red .geo-dot,
-  :root:not([data-leds="sempre"]) .dot-signal--orange .geo-dot,
-  :root:not([data-leds="sempre"]) .dot-signal--green .geo-dot { animation: none; opacity: 1; }
+  :root:not([data-leds="sempre"]) :is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) .geo-dot { animation: none !important; opacity: 1; }
 }
 .signal-label { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.8rem; color: var(--muted); }
@@ -4367,7 +4379,7 @@ function appearanceCard() {
       { class: 'muted' },
       systemReducesMotion()
         ? 'Este computador está pedindo para reduzir animações. Sem a opção acima, vermelho, laranja e verde ficam parados (como na Agenda Digital). No Windows: Configurações › Acessibilidade › Efeitos visuais › Efeitos de animação.'
-        : 'Este computador não pede para reduzir animações: vermelho, laranja e verde piscam a cada 0,8 s, ponto a ponto da esquerda para a direita, como na Agenda Digital; amarelo, azul e cinza são fixos.',
+        : 'Este computador não pede para reduzir animações: vermelho, laranja e verde piscam a cada 0,8 s, acendendo e apagando da esquerda para a direita, como na Agenda do André; amarelo, azul e cinza são fixos.',
     ),
   );
 }
