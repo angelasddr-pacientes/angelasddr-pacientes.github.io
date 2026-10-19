@@ -152,6 +152,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .signin__title { font-size: 1.7rem; font-weight: 700; margin-bottom: 14px; }
 .signin__text { font-size: 1.15rem; line-height: 1.55; margin-bottom: 26px; }
 .btn.signin__button { font-size: 1.25rem; padding: 16px 34px; }
+.signin__detail { margin-top: 18px; font-size: 0.9rem; overflow-wrap: anywhere; }
 #backupBanner .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0 0; }
 .backup-status { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; }
 .stack--tight { gap: 8px; }
@@ -3152,339 +3153,6 @@ function saveLedMotion(choice) {
 
 return { LED_MOTION, systemReducesMotion, readLedMotion, applyLedMotion, saveLedMotion };
 })();
-modules["ui/rich-text.js"] = (() => {
-// Formatted notes: only a small set of tags survives, so pasted pages or a tampered backup
-// can never bring scripts, links, images or event handlers into the app.
-
-const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'H3', 'P', 'DIV', 'BR', 'UL', 'OL', 'LI', 'SPAN', 'MARK', 'FONT']);
-const DROPPED_TAGS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'SVG', 'MATH', 'NOSCRIPT', 'TITLE', 'META', 'LINK', 'HEAD']);
-const SAFE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\(\s*[\d.\s,%]+\)|[a-z]+)$/i;
-const ALLOWED_STYLES = ['color', 'background-color'];
-
-const escapeHtml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/** Plain text from older notebooks, line breaks kept. */
-const textToHtml = (text) => escapeHtml(text ?? '').replace(/\r?\n/g, '<br>');
-
-function cleanStyle(element) {
-  const kept = ALLOWED_STYLES.map((property) => [property, element.style.getPropertyValue(property).trim()]).filter(([, value]) => value && SAFE_COLOR.test(value));
-  const color = element.tagName === 'FONT' ? element.getAttribute('color') : null;
-  [...element.attributes].forEach((attribute) => element.removeAttribute(attribute.name));
-  kept.forEach(([property, value]) => element.style.setProperty(property, value));
-  if (color && SAFE_COLOR.test(color)) element.style.setProperty('color', color);
-}
-
-function cleanNode(node) {
-  [...node.childNodes].forEach((child) => {
-    if (child.nodeType === Node.TEXT_NODE) return;
-    if (child.nodeType !== Node.ELEMENT_NODE || DROPPED_TAGS.has(child.tagName)) {
-      child.remove();
-      return;
-    }
-    cleanNode(child);
-    if (!ALLOWED_TAGS.has(child.tagName)) child.replaceWith(...child.childNodes);
-    else cleanStyle(child);
-  });
-}
-
-/** Keeps only formatting tags and text colours. */
-function sanitizeHtml(html) {
-  const template = document.createElement('template');
-  template.innerHTML = html ?? '';
-  cleanNode(template.content);
-  const container = document.createElement('div');
-  container.append(template.content);
-  return container.innerHTML;
-}
-
-return { textToHtml, sanitizeHtml };
-})();
-modules["ui/notepad.js"] = (() => {
-const { h } = modules["ui/dom.js"];
-const { sanitizeHtml, textToHtml } = modules["ui/rich-text.js"];
-const STORAGE_KEY = 'controle-clinico/caderno-de-borrao';
-const SAVE_DELAY_MS = 400;
-// Fired on window after every save, so the automatic backup can include the notebook.
-const NOTEPAD_SAVED_EVENT = 'controle-clinico:caderno-salvo';
-const REPLACED_EVENT = 'controle-clinico:caderno-substituido';
-
-const EMPTY = { html: '', text: '', savedAt: null };
-
-/** Older notebooks kept plain text only; they open with their line breaks. */
-function normalize(note) {
-  if (!note || typeof note !== 'object') return EMPTY;
-  const html = typeof note.html === 'string' ? sanitizeHtml(note.html) : textToHtml(note.text ?? '');
-  return { html, text: typeof note.text === 'string' ? note.text : '', savedAt: note.savedAt ?? null };
-}
-
-function load() {
-  try {
-    return normalize(JSON.parse(localStorage.getItem(STORAGE_KEY)));
-  } catch {
-    return EMPTY;
-  }
-}
-
-function save(html, text) {
-  const note = { html, text, savedAt: new Date().toISOString() };
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(note));
-    window.dispatchEvent(new Event(NOTEPAD_SAVED_EVENT));
-    return note;
-  } catch {
-    return null;
-  }
-}
-
-/** The notebook as saved (goes into backups): formatted HTML plus its plain text. */
-const readNotepad = () => load();
-
-/** Puts back the notebook of a restored backup. */
-function replaceNotepad(note) {
-  if (typeof note?.html !== 'string' && typeof note?.text !== 'string') return;
-  const { html, text } = normalize(note);
-  save(html, text);
-  window.dispatchEvent(new Event(REPLACED_EVENT));
-}
-
-const clock = (isoDateTime) => new Date(isoDateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
-function download(text) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-  const link = h('a', { href: url, download: `caderno-de-borrao-${new Date().toISOString().slice(0, 10)}.txt` });
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-const HIGHLIGHT = '#fde68a';
-const TEXT_COLORS = [
-  ['', 'Cor do texto'],
-  ['#b91c1c', 'Vermelho'],
-  ['#15803d', 'Verde'],
-  ['#1d4ed8', 'Azul'],
-  ['#7c3aed', 'Roxo'],
-];
-
-// execCommand is the editing API every browser implements for contenteditable (Chrome,
-// Edge, Safari, Firefox); it also keeps Ctrl+Z working.
-function run(command, value = null, withCss = false) {
-  document.execCommand('styleWithCSS', false, withCss);
-  document.execCommand(command, false, value);
-}
-
-const blockOf = (editor) => {
-  const node = document.getSelection()?.anchorNode;
-  const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-  return element && editor.contains(element) ? element.closest('h3, p, div, li') : null;
-};
-
-const isHighlighted = () => {
-  const value = document.queryCommandValue('hiliteColor') || document.queryCommandValue('backColor');
-  return /253,\s*230,\s*138|fde68a/i.test(value);
-};
-
-/**
- * Scratch notes with basic formatting (bold, italic, underline, strike, heading, lists,
- * highlighter, text colour), saved automatically in this browser only. Lives outside the
- * re-rendered views, so typing is never interrupted.
- */
-function notepad() {
-  const initial = load();
-  const status = h('span', { class: 'notepad__status', role: 'status' }, initial.savedAt ? `Salvo às ${clock(initial.savedAt)}` : 'Salva sozinho enquanto você escreve');
-  let timer = null;
-  const editor = h('div', {
-    class: 'notepad__area',
-    contenteditable: 'true',
-    role: 'textbox',
-    'aria-multiline': 'true',
-    'aria-label': 'Caderno de borrão',
-    'data-placeholder': 'Anote aqui: recados, ideias, pendências do dia…',
-    spellcheck: 'true',
-  });
-  editor.innerHTML = initial.html;
-
-  const scheduleSave = () => {
-    status.textContent = 'Salvando…';
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      const saved = save(sanitizeHtml(editor.innerHTML), editor.innerText.trim());
-      status.textContent = saved ? `Salvo às ${clock(saved.savedAt)}` : 'Não foi possível salvar neste navegador';
-    }, SAVE_DELAY_MS);
-  };
-  editor.addEventListener('input', scheduleSave);
-  // Pasted pages keep their formatting but lose anything outside the allowed tags.
-  editor.addEventListener('paste', (event) => {
-    event.preventDefault();
-    const html = event.clipboardData.getData('text/html');
-    if (html) run('insertHTML', sanitizeHtml(html));
-    else run('insertText', event.clipboardData.getData('text/plain'));
-  });
-
-  const toggles = [];
-  const tool = (label, title, action, isActive = null) => {
-    const element = h(
-      'button',
-      {
-        type: 'button',
-        class: 'notepad__tool',
-        title,
-        'aria-label': title,
-        'aria-pressed': isActive ? 'false' : null,
-        // Keeps the text selection: a click would otherwise move focus to the button.
-        onMousedown: (event) => event.preventDefault(),
-        onClick: () => {
-          editor.focus();
-          action();
-          refreshToolbar();
-          scheduleSave();
-        },
-      },
-      label,
-    );
-    if (isActive) toggles.push([element, isActive]);
-    return element;
-  };
-  const colorSelect = h(
-    'select',
-    {
-      class: 'notepad__color',
-      'aria-label': 'Cor do texto',
-      title: 'Cor do texto',
-      onChange: (event) => {
-        editor.focus();
-        run('foreColor', event.target.value || getComputedStyle(editor).color, true);
-        event.target.value = '';
-        scheduleSave();
-      },
-    },
-    TEXT_COLORS.map(([value, label]) => h('option', { value }, label)),
-  );
-
-  function refreshToolbar() {
-    toggles.forEach(([element, isActive]) => element.setAttribute('aria-pressed', String(Boolean(isActive()))));
-  }
-  document.addEventListener('selectionchange', () => {
-    if (editor.contains(document.getSelection()?.anchorNode ?? null)) refreshToolbar();
-  });
-
-  const toolbar = h(
-    'div',
-    { class: 'notepad__toolbar', role: 'toolbar', 'aria-label': 'Formatação do caderno' },
-    tool(h('strong', {}, 'N'), 'Negrito (Ctrl+B)', () => run('bold'), () => document.queryCommandState('bold')),
-    tool(h('em', {}, 'I'), 'Itálico (Ctrl+I)', () => run('italic'), () => document.queryCommandState('italic')),
-    tool(h('u', {}, 'S'), 'Sublinhado (Ctrl+U)', () => run('underline'), () => document.queryCommandState('underline')),
-    tool(h('s', {}, 'R'), 'Riscado', () => run('strikeThrough'), () => document.queryCommandState('strikeThrough')),
-    tool('T', 'Título', () => run('formatBlock', blockOf(editor)?.tagName === 'H3' ? 'div' : 'h3'), () => blockOf(editor)?.tagName === 'H3'),
-    tool('•', 'Lista com marcadores', () => run('insertUnorderedList'), () => document.queryCommandState('insertUnorderedList')),
-    tool('1.', 'Lista numerada', () => run('insertOrderedList'), () => document.queryCommandState('insertOrderedList')),
-    tool(h('span', { class: 'notepad__marker' }, 'M'), 'Marca-texto', () => run('hiliteColor', isHighlighted() ? 'transparent' : HIGHLIGHT, true), isHighlighted),
-    colorSelect,
-    tool('⌫', 'Limpar formatação', () => {
-      run('removeFormat');
-      run('formatBlock', 'div');
-    }),
-  );
-
-  window.addEventListener(REPLACED_EVENT, () => {
-    const note = load();
-    editor.innerHTML = note.html;
-    status.textContent = note.savedAt ? `Restaurado às ${clock(note.savedAt)}` : '';
-  });
-  const clear = () => {
-    if (!editor.innerText.trim() || !confirm('Apagar todo o conteúdo do caderno de borrão?')) return;
-    editor.innerHTML = '';
-    scheduleSave();
-  };
-  return h(
-    'section',
-    { class: 'side-card notepad', 'aria-labelledby': 'notepadTitle' },
-    h('div', { class: 'side-card__head' }, h('h2', { id: 'notepadTitle' }, 'Caderno de borrão'), status),
-    toolbar,
-    editor,
-    h(
-      'div',
-      { class: 'notepad__actions' },
-      h('span', { class: 'muted' }, 'Fica só neste navegador (e no backup).'),
-      h('button', { type: 'button', class: 'btn btn--ghost btn--small', onClick: () => download(editor.innerText) }, 'Baixar .txt'),
-      h('button', { type: 'button', class: 'btn btn--ghost btn--small', onClick: clear }, 'Limpar'),
-    ),
-  );
-}
-
-return { NOTEPAD_SAVED_EVENT, readNotepad, replaceNotepad, notepad };
-})();
-modules["ui/backup-status.js"] = (() => {
-const { BACKUP_STATE } = modules["infra/file-backup.js"];
-const { toast } = modules["ui/components.js"];
-const { h, replaceChildren } = modules["ui/dom.js"];
-const { readNotepad } = modules["ui/notepad.js"];
-const STATUS_CLASS = 'backup-status';
-
-/** What a backup holds: every record, the scratch notebook and when it was saved. */
-const backupSnapshot = (dataset) => ({ ...dataset, notepad: readNotepad(), savedAt: new Date().toISOString() });
-
-const TONE = {
-  [BACKUP_STATE.ACTIVE]: 'blue',
-  [BACKUP_STATE.NEEDS_PERMISSION]: 'orange',
-  [BACKUP_STATE.ERROR]: 'red',
-  [BACKUP_STATE.OFF]: 'yellow',
-  [BACKUP_STATE.UNSUPPORTED]: 'gray',
-};
-
-const clock = (isoDateTime) => new Date(isoDateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
-function backupStatusText(status) {
-  switch (status.state) {
-    case BACKUP_STATE.ACTIVE:
-      return status.lastSavedAt ? `Backup automático ativo · salvo às ${clock(status.lastSavedAt)} em "${status.fileName}"` : `Backup automático ativo em "${status.fileName}"`;
-    case BACKUP_STATE.NEEDS_PERMISSION:
-      return `Backup automático pausado: o navegador pede sua autorização para gravar em "${status.fileName}"`;
-    case BACKUP_STATE.ERROR:
-      return `Backup automático com erro: ${status.error}`;
-    case BACKUP_STATE.OFF:
-      return 'Backup automático desligado';
-    default:
-      return 'Backup automático indisponível neste navegador ou aparelho: use "Exportar backup" (no computador, o Chrome e o Edge fazem o backup automático)';
-  }
-}
-
-const dot = (state) => h('span', { class: `dot-signals` }, h('span', { class: `dot-signal dot-signal--${TONE[state]}` }, h('span', { class: 'geo-dot' })));
-
-async function reconnectBackup(backup) {
-  await backup.reconnect();
-  if (backup.status().state === BACKUP_STATE.ACTIVE) toast('Backup automático reativado.');
-}
-
-/** Status line that main.js keeps current without re-rendering the view (see `refreshBackupStatus`). */
-const backupStatusLine = (status) => h('p', { class: STATUS_CLASS, role: 'status' }, dot(status.state), ' ', backupStatusText(status));
-
-function refreshBackupStatus(status) {
-  document.querySelectorAll(`.${STATUS_CLASS}`).forEach((element) => replaceChildren(element, dot(status.state), ' ', backupStatusText(status)));
-}
-
-/** Header indicator: a click reauthorizes the backup or opens the settings. */
-function renderBackupIndicator(container, status, backup, openSettings) {
-  const needsClick = status.state === BACKUP_STATE.NEEDS_PERMISSION;
-  replaceChildren(
-    container,
-    h(
-      'button',
-      {
-        type: 'button',
-        class: `backup-pill backup-pill--${status.state}`,
-        title: backupStatusText(status),
-        onClick: () => (needsClick ? reconnectBackup(backup) : openSettings()),
-      },
-      dot(status.state),
-      needsClick ? 'Reativar backup' : status.state === BACKUP_STATE.ACTIVE ? 'Backup ativo' : 'Backup',
-    ),
-  );
-}
-
-return { backupSnapshot, backupStatusText, reconnectBackup, backupStatusLine, refreshBackupStatus, renderBackupIndicator };
-})();
 modules["domain/cloud-parts.js"] = (() => {
 // The records go to the cloud in parts, one Firestore document each (a document holds at
 // most 1 MiB): the lists in a few parts, the sessions one part per year, the rest in "base".
@@ -3796,6 +3464,340 @@ async function startCloudSync({ config, emulatorHost = null, current, onRemote, 
 
 return { CLOUD_STATE, readCloudConfig, readEmulatorHost, startCloudSync };
 })();
+modules["ui/rich-text.js"] = (() => {
+// Formatted notes: only a small set of tags survives, so pasted pages or a tampered backup
+// can never bring scripts, links, images or event handlers into the app.
+
+const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'H3', 'P', 'DIV', 'BR', 'UL', 'OL', 'LI', 'SPAN', 'MARK', 'FONT']);
+const DROPPED_TAGS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'SVG', 'MATH', 'NOSCRIPT', 'TITLE', 'META', 'LINK', 'HEAD']);
+const SAFE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\(\s*[\d.\s,%]+\)|[a-z]+)$/i;
+const ALLOWED_STYLES = ['color', 'background-color'];
+
+const escapeHtml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Plain text from older notebooks, line breaks kept. */
+const textToHtml = (text) => escapeHtml(text ?? '').replace(/\r?\n/g, '<br>');
+
+function cleanStyle(element) {
+  const kept = ALLOWED_STYLES.map((property) => [property, element.style.getPropertyValue(property).trim()]).filter(([, value]) => value && SAFE_COLOR.test(value));
+  const color = element.tagName === 'FONT' ? element.getAttribute('color') : null;
+  [...element.attributes].forEach((attribute) => element.removeAttribute(attribute.name));
+  kept.forEach(([property, value]) => element.style.setProperty(property, value));
+  if (color && SAFE_COLOR.test(color)) element.style.setProperty('color', color);
+}
+
+function cleanNode(node) {
+  [...node.childNodes].forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) return;
+    if (child.nodeType !== Node.ELEMENT_NODE || DROPPED_TAGS.has(child.tagName)) {
+      child.remove();
+      return;
+    }
+    cleanNode(child);
+    if (!ALLOWED_TAGS.has(child.tagName)) child.replaceWith(...child.childNodes);
+    else cleanStyle(child);
+  });
+}
+
+/** Keeps only formatting tags and text colours. */
+function sanitizeHtml(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html ?? '';
+  cleanNode(template.content);
+  const container = document.createElement('div');
+  container.append(template.content);
+  return container.innerHTML;
+}
+
+return { textToHtml, sanitizeHtml };
+})();
+modules["ui/notepad.js"] = (() => {
+const { readCloudConfig } = modules["infra/cloud-sync.js"];
+const { h } = modules["ui/dom.js"];
+const { sanitizeHtml, textToHtml } = modules["ui/rich-text.js"];
+const STORAGE_KEY = 'controle-clinico/caderno-de-borrao';
+const SAVE_DELAY_MS = 400;
+// Fired on window after every save, so the automatic backup can include the notebook.
+const NOTEPAD_SAVED_EVENT = 'controle-clinico:caderno-salvo';
+const REPLACED_EVENT = 'controle-clinico:caderno-substituido';
+
+const EMPTY = { html: '', text: '', savedAt: null };
+
+/** Older notebooks kept plain text only; they open with their line breaks. */
+function normalize(note) {
+  if (!note || typeof note !== 'object') return EMPTY;
+  const html = typeof note.html === 'string' ? sanitizeHtml(note.html) : textToHtml(note.text ?? '');
+  return { html, text: typeof note.text === 'string' ? note.text : '', savedAt: note.savedAt ?? null };
+}
+
+function load() {
+  try {
+    return normalize(JSON.parse(localStorage.getItem(STORAGE_KEY)));
+  } catch {
+    return EMPTY;
+  }
+}
+
+function save(html, text) {
+  const note = { html, text, savedAt: new Date().toISOString() };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(note));
+    window.dispatchEvent(new Event(NOTEPAD_SAVED_EVENT));
+    return note;
+  } catch {
+    return null;
+  }
+}
+
+/** The notebook as saved (goes into backups): formatted HTML plus its plain text. */
+const readNotepad = () => load();
+
+/** Puts back the notebook of a restored backup. */
+function replaceNotepad(note) {
+  if (typeof note?.html !== 'string' && typeof note?.text !== 'string') return;
+  const { html, text } = normalize(note);
+  save(html, text);
+  window.dispatchEvent(new Event(REPLACED_EVENT));
+}
+
+const clock = (isoDateTime) => new Date(isoDateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+function download(text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const link = h('a', { href: url, download: `caderno-de-borrao-${new Date().toISOString().slice(0, 10)}.txt` });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+const HIGHLIGHT = '#fde68a';
+const TEXT_COLORS = [
+  ['', 'Cor do texto'],
+  ['#b91c1c', 'Vermelho'],
+  ['#15803d', 'Verde'],
+  ['#1d4ed8', 'Azul'],
+  ['#7c3aed', 'Roxo'],
+];
+
+// execCommand is the editing API every browser implements for contenteditable (Chrome,
+// Edge, Safari, Firefox); it also keeps Ctrl+Z working.
+function run(command, value = null, withCss = false) {
+  document.execCommand('styleWithCSS', false, withCss);
+  document.execCommand(command, false, value);
+}
+
+const blockOf = (editor) => {
+  const node = document.getSelection()?.anchorNode;
+  const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  return element && editor.contains(element) ? element.closest('h3, p, div, li') : null;
+};
+
+const isHighlighted = () => {
+  const value = document.queryCommandValue('hiliteColor') || document.queryCommandValue('backColor');
+  return /253,\s*230,\s*138|fde68a/i.test(value);
+};
+
+/**
+ * Scratch notes with basic formatting (bold, italic, underline, strike, heading, lists,
+ * highlighter, text colour), saved automatically in this browser only. Lives outside the
+ * re-rendered views, so typing is never interrupted.
+ */
+function notepad() {
+  const initial = load();
+  const status = h('span', { class: 'notepad__status', role: 'status' }, initial.savedAt ? `Salvo às ${clock(initial.savedAt)}` : 'Salva sozinho enquanto você escreve');
+  let timer = null;
+  const editor = h('div', {
+    class: 'notepad__area',
+    contenteditable: 'true',
+    role: 'textbox',
+    'aria-multiline': 'true',
+    'aria-label': 'Caderno de borrão',
+    'data-placeholder': 'Anote aqui: recados, ideias, pendências do dia…',
+    spellcheck: 'true',
+  });
+  editor.innerHTML = initial.html;
+
+  const scheduleSave = () => {
+    status.textContent = 'Salvando…';
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const saved = save(sanitizeHtml(editor.innerHTML), editor.innerText.trim());
+      status.textContent = saved ? `Salvo às ${clock(saved.savedAt)}` : 'Não foi possível salvar neste navegador';
+    }, SAVE_DELAY_MS);
+  };
+  editor.addEventListener('input', scheduleSave);
+  // Pasted pages keep their formatting but lose anything outside the allowed tags.
+  editor.addEventListener('paste', (event) => {
+    event.preventDefault();
+    const html = event.clipboardData.getData('text/html');
+    if (html) run('insertHTML', sanitizeHtml(html));
+    else run('insertText', event.clipboardData.getData('text/plain'));
+  });
+
+  const toggles = [];
+  const tool = (label, title, action, isActive = null) => {
+    const element = h(
+      'button',
+      {
+        type: 'button',
+        class: 'notepad__tool',
+        title,
+        'aria-label': title,
+        'aria-pressed': isActive ? 'false' : null,
+        // Keeps the text selection: a click would otherwise move focus to the button.
+        onMousedown: (event) => event.preventDefault(),
+        onClick: () => {
+          editor.focus();
+          action();
+          refreshToolbar();
+          scheduleSave();
+        },
+      },
+      label,
+    );
+    if (isActive) toggles.push([element, isActive]);
+    return element;
+  };
+  const colorSelect = h(
+    'select',
+    {
+      class: 'notepad__color',
+      'aria-label': 'Cor do texto',
+      title: 'Cor do texto',
+      onChange: (event) => {
+        editor.focus();
+        run('foreColor', event.target.value || getComputedStyle(editor).color, true);
+        event.target.value = '';
+        scheduleSave();
+      },
+    },
+    TEXT_COLORS.map(([value, label]) => h('option', { value }, label)),
+  );
+
+  function refreshToolbar() {
+    toggles.forEach(([element, isActive]) => element.setAttribute('aria-pressed', String(Boolean(isActive()))));
+  }
+  document.addEventListener('selectionchange', () => {
+    if (editor.contains(document.getSelection()?.anchorNode ?? null)) refreshToolbar();
+  });
+
+  const toolbar = h(
+    'div',
+    { class: 'notepad__toolbar', role: 'toolbar', 'aria-label': 'Formatação do caderno' },
+    tool(h('strong', {}, 'N'), 'Negrito (Ctrl+B)', () => run('bold'), () => document.queryCommandState('bold')),
+    tool(h('em', {}, 'I'), 'Itálico (Ctrl+I)', () => run('italic'), () => document.queryCommandState('italic')),
+    tool(h('u', {}, 'S'), 'Sublinhado (Ctrl+U)', () => run('underline'), () => document.queryCommandState('underline')),
+    tool(h('s', {}, 'R'), 'Riscado', () => run('strikeThrough'), () => document.queryCommandState('strikeThrough')),
+    tool('T', 'Título', () => run('formatBlock', blockOf(editor)?.tagName === 'H3' ? 'div' : 'h3'), () => blockOf(editor)?.tagName === 'H3'),
+    tool('•', 'Lista com marcadores', () => run('insertUnorderedList'), () => document.queryCommandState('insertUnorderedList')),
+    tool('1.', 'Lista numerada', () => run('insertOrderedList'), () => document.queryCommandState('insertOrderedList')),
+    tool(h('span', { class: 'notepad__marker' }, 'M'), 'Marca-texto', () => run('hiliteColor', isHighlighted() ? 'transparent' : HIGHLIGHT, true), isHighlighted),
+    colorSelect,
+    tool('⌫', 'Limpar formatação', () => {
+      run('removeFormat');
+      run('formatBlock', 'div');
+    }),
+  );
+
+  window.addEventListener(REPLACED_EVENT, () => {
+    const note = load();
+    editor.innerHTML = note.html;
+    status.textContent = note.savedAt ? `Restaurado às ${clock(note.savedAt)}` : '';
+  });
+  const clear = () => {
+    if (!editor.innerText.trim() || !confirm('Apagar todo o conteúdo do caderno de borrão?')) return;
+    editor.innerHTML = '';
+    scheduleSave();
+  };
+  return h(
+    'section',
+    { class: 'side-card notepad', 'aria-labelledby': 'notepadTitle' },
+    h('div', { class: 'side-card__head' }, h('h2', { id: 'notepadTitle' }, 'Caderno de borrão'), status),
+    toolbar,
+    editor,
+    h(
+      'div',
+      { class: 'notepad__actions' },
+      h('span', { class: 'muted' }, readCloudConfig() ? 'Vai para a nuvem com os dados.' : 'Fica só neste navegador (e no backup).'),
+      h('button', { type: 'button', class: 'btn btn--ghost btn--small', onClick: () => download(editor.innerText) }, 'Baixar .txt'),
+      h('button', { type: 'button', class: 'btn btn--ghost btn--small', onClick: clear }, 'Limpar'),
+    ),
+  );
+}
+
+return { NOTEPAD_SAVED_EVENT, readNotepad, replaceNotepad, notepad };
+})();
+modules["ui/backup-status.js"] = (() => {
+const { BACKUP_STATE } = modules["infra/file-backup.js"];
+const { toast } = modules["ui/components.js"];
+const { h, replaceChildren } = modules["ui/dom.js"];
+const { readNotepad } = modules["ui/notepad.js"];
+const STATUS_CLASS = 'backup-status';
+
+/** What a backup holds: every record, the scratch notebook and when it was saved. */
+const backupSnapshot = (dataset) => ({ ...dataset, notepad: readNotepad(), savedAt: new Date().toISOString() });
+
+const TONE = {
+  [BACKUP_STATE.ACTIVE]: 'blue',
+  [BACKUP_STATE.NEEDS_PERMISSION]: 'orange',
+  [BACKUP_STATE.ERROR]: 'red',
+  [BACKUP_STATE.OFF]: 'yellow',
+  [BACKUP_STATE.UNSUPPORTED]: 'gray',
+};
+
+const clock = (isoDateTime) => new Date(isoDateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+function backupStatusText(status) {
+  switch (status.state) {
+    case BACKUP_STATE.ACTIVE:
+      return status.lastSavedAt ? `Backup automático ativo · salvo às ${clock(status.lastSavedAt)} em "${status.fileName}"` : `Backup automático ativo em "${status.fileName}"`;
+    case BACKUP_STATE.NEEDS_PERMISSION:
+      return `Backup automático pausado: o navegador pede sua autorização para gravar em "${status.fileName}"`;
+    case BACKUP_STATE.ERROR:
+      return `Backup automático com erro: ${status.error}`;
+    case BACKUP_STATE.OFF:
+      return 'Backup automático desligado';
+    default:
+      return 'Backup automático indisponível neste navegador ou aparelho: use "Exportar backup" (no computador, o Chrome e o Edge fazem o backup automático)';
+  }
+}
+
+const dot = (state) => h('span', { class: `dot-signals` }, h('span', { class: `dot-signal dot-signal--${TONE[state]}` }, h('span', { class: 'geo-dot' })));
+
+async function reconnectBackup(backup) {
+  await backup.reconnect();
+  if (backup.status().state === BACKUP_STATE.ACTIVE) toast('Backup automático reativado.');
+}
+
+/** Status line that main.js keeps current without re-rendering the view (see `refreshBackupStatus`). */
+const backupStatusLine = (status) => h('p', { class: STATUS_CLASS, role: 'status' }, dot(status.state), ' ', backupStatusText(status));
+
+function refreshBackupStatus(status) {
+  document.querySelectorAll(`.${STATUS_CLASS}`).forEach((element) => replaceChildren(element, dot(status.state), ' ', backupStatusText(status)));
+}
+
+/** Header indicator: a click reauthorizes the backup or opens the settings. */
+function renderBackupIndicator(container, status, backup, openSettings) {
+  const needsClick = status.state === BACKUP_STATE.NEEDS_PERMISSION;
+  replaceChildren(
+    container,
+    h(
+      'button',
+      {
+        type: 'button',
+        class: `backup-pill backup-pill--${status.state}`,
+        title: backupStatusText(status),
+        onClick: () => (needsClick ? reconnectBackup(backup) : openSettings()),
+      },
+      dot(status.state),
+      needsClick ? 'Reativar backup' : status.state === BACKUP_STATE.ACTIVE ? 'Backup ativo' : 'Backup',
+    ),
+  );
+}
+
+return { backupSnapshot, backupStatusText, reconnectBackup, backupStatusLine, refreshBackupStatus, renderBackupIndicator };
+})();
 modules["ui/cloud-session.js"] = (() => {
 const { migrateDataset } = modules["domain/migrations.js"];
 const { CLOUD_STATE, readCloudConfig, readEmulatorHost, startCloudSync } = modules["infra/cloud-sync.js"];
@@ -3825,8 +3827,19 @@ const TONE = {
 /** The hosted build keeps the records in the cloud; the single file opened from disk does not. */
 const isCloudBuild = () => readCloudConfig() !== null;
 
-/** Until someone with access signs in, no record is shown. */
-const needsSignIn = (app) => [CLOUD_STATE.SIGNED_OUT, CLOUD_STATE.DENIED].includes(app.cloud?.status.state);
+/**
+ * The cloud state shown in place of the records, or null when the records are shown.
+ * Until someone with access signs in, no record is shown. A device without records waits for
+ * the cloud: an empty agenda while it answers (or fails to) looks like lost data.
+ */
+function lockScreenOf(app) {
+  const state = app.cloud?.status.state;
+  if (state === CLOUD_STATE.SIGNED_OUT || state === CLOUD_STATE.DENIED) return state;
+  const waiting = [CLOUD_STATE.LOADING, CLOUD_STATE.OFFLINE, CLOUD_STATE.ERROR].includes(state);
+  return waiting && !app.dataset.patients.length ? state : null;
+}
+
+const isLocked = (app) => lockScreenOf(app) !== null;
 
 const dot = (state) => h('span', { class: 'dot-signals' }, h('span', { class: `dot-signal dot-signal--${TONE[state]}` }, h('span', { class: 'geo-dot' })));
 
@@ -3847,24 +3860,35 @@ async function signOutHere(app) {
   location.reload();
 }
 
-/** Full-page sign-in: one big button, nothing else to understand. */
-function renderSignIn(app) {
-  const { state, email } = app.cloud.status;
-  const denied = state === CLOUD_STATE.DENIED;
+const lockButton = (label, onClick, variant = 'primary') => h('button', { type: 'button', class: `btn btn--${variant} signin__button`, onClick }, label);
+
+/** Full page in place of the records: one message and at most one big button, nothing else to understand. */
+function renderLockScreen(app) {
+  const { state, email, error } = app.cloud.status;
+  const retry = () => location.reload();
+  const screens = {
+    [CLOUD_STATE.SIGNED_OUT]: [
+      'Entre com a sua conta Google para ver e salvar os dados do consultório. Basta fazer isso uma vez em cada aparelho.',
+      lockButton('Entrar com Google', () => app.cloud.api?.signIn()),
+    ],
+    [CLOUD_STATE.DENIED]: [
+      `A conta ${email} não tem acesso a estes dados. Entre com a conta autorizada.`,
+      lockButton('Entrar com outra conta Google', () => app.cloud.api?.switchAccount()),
+    ],
+    [CLOUD_STATE.LOADING]: ['Conectando à nuvem… Os dados aparecem em instantes.', lockButton('Tentar de novo', retry, 'ghost')],
+    [CLOUD_STATE.OFFLINE]: ['Sem internet. Conecte este aparelho à internet para carregar os dados.', lockButton('Tentar de novo', retry)],
+    [CLOUD_STATE.ERROR]: ['Não foi possível conectar à nuvem. Confira a internet e toque em "Tentar de novo".', lockButton('Tentar de novo', retry)],
+  };
+  const [text, action] = screens[state];
   return h(
     'div',
     { class: 'signin' },
     card(
       { class: 'signin__card' },
       h('h2', { class: 'signin__title' }, 'Controle Clínico'),
-      denied
-        ? h('p', { class: 'signin__text' }, `A conta ${email} não tem acesso a estes dados. Entre com a conta autorizada.`)
-        : h('p', { class: 'signin__text' }, 'Entre com a sua conta Google para ver e salvar os dados do consultório. Basta fazer isso uma vez em cada aparelho.'),
-      h(
-        'button',
-        { type: 'button', class: 'btn btn--primary signin__button', onClick: () => (denied ? app.cloud.api?.switchAccount() : app.cloud.api?.signIn()) },
-        denied ? 'Entrar com outra conta Google' : 'Entrar com Google',
-      ),
+      h('p', { class: 'signin__text' }, text),
+      action,
+      state === CLOUD_STATE.ERROR && error ? h('p', { class: 'muted signin__detail' }, `Detalhe técnico: ${error}`) : null,
     ),
   );
 }
@@ -3892,12 +3916,11 @@ function cloudCard(app) {
 async function startCloud(app) {
   app.cloud = { status: { state: CLOUD_STATE.LOADING, email: '', error: '' }, api: null };
   const onStatus = (status) => {
-    const wasLocked = needsSignIn(app);
+    const screenBefore = lockScreenOf(app);
     app.cloud.status = status;
     renderIndicator(app);
-    document.body.classList.toggle('cloud-locked', needsSignIn(app));
-    if (wasLocked !== needsSignIn(app) || app.ui.view === 'configuracoes') app.setUi({});
-    if (status.state === CLOUD_STATE.ERROR) toast(`Não foi possível salvar na nuvem: ${status.error}`, 'danger');
+    if (screenBefore !== lockScreenOf(app) || app.ui.view === 'configuracoes') app.setUi({});
+    if (status.state === CLOUD_STATE.ERROR && !isLocked(app)) toast(`Não foi possível salvar na nuvem: ${status.error}`, 'danger');
   };
   renderIndicator(app);
   try {
@@ -3933,7 +3956,7 @@ async function startCloud(app) {
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && app.cloud.api.flush());
 }
 
-return { isCloudBuild, needsSignIn, renderSignIn, cloudCard, startCloud };
+return { isCloudBuild, lockScreenOf, isLocked, renderLockScreen, cloudCard, startCloud };
 })();
 modules["ui/views/data.js"] = (() => {
 const { migrateDataset } = modules["domain/migrations.js"];
@@ -6943,7 +6966,7 @@ const { NOTEPAD_SAVED_EVENT } = modules["ui/notepad.js"];
 const { applyLedMotion } = modules["ui/appearance.js"];
 const { createSidePanel } = modules["ui/side-panel.js"];
 const { registerOfflineCache } = modules["infra/offline-cache.js"];
-const { isCloudBuild, needsSignIn, renderSignIn, startCloud } = modules["ui/cloud-session.js"];
+const { isCloudBuild, isLocked, renderLockScreen, startCloud } = modules["ui/cloud-session.js"];
 const VIEWS = [
   { id: 'painel', label: 'Painel geral', render: renderHub },
   { id: 'pacientes', label: 'Pacientes', render: renderPatients },
@@ -7007,7 +7030,7 @@ function renderToolbar(app) {
 }
 
 function renderNav(app) {
-  if (needsSignIn(app)) return [];
+  if (isLocked(app)) return [];
   return VIEWS.map((view) =>
     h(
       'button',
@@ -7023,7 +7046,7 @@ function renderNav(app) {
 }
 
 function renderView(app) {
-  if (needsSignIn(app)) return renderSignIn(app);
+  if (isLocked(app)) return renderLockScreen(app);
   const view = VIEWS.find((candidate) => candidate.id === app.ui.view) ?? VIEWS[0];
   const warning = app.saveFailed
     ? h('div', { class: 'banner banner--danger', role: 'alert' }, 'Não foi possível salvar neste navegador (armazenamento bloqueado ou cheio). Exporte um backup em Configurações para não perder os registros.')
@@ -7116,6 +7139,7 @@ function start() {
   let lastView = null;
   const render = () => {
     const focusedKey = document.activeElement?.dataset?.focusKey ?? null;
+    document.body.classList.toggle('cloud-locked', isLocked(app));
     replaceChildren(nav, renderNav(app));
     replaceChildren(main, renderView(app));
     side.update();

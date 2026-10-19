@@ -3,6 +3,8 @@
 // Requests to other sites (exchange rates, stocks, trivia) are left alone.
 const CACHE = 'controle-clinico-v1';
 const PAGE = './index.html';
+const ROOT = new URL('./', self.location).pathname;
+const isAppPage = (url) => url.pathname === ROOT || url.pathname === `${ROOT}index.html`;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -24,10 +26,14 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
-  const cacheKey = request.mode === 'navigate' ? PAGE : request;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+  const appPage = request.mode === 'navigate' && isAppPage(url);
+  const cacheKey = appPage ? PAGE : request;
+  // The app page is always checked with the server (GitHub Pages lets browsers reuse a page for a
+  // while), so a new version opens on the next visit.
   event.respondWith(
-    fetch(request)
+    (appPage ? fetch(request.url, { cache: 'no-cache' }) : fetch(request))
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();
