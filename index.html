@@ -72,9 +72,23 @@
   --dot-blue: #2d6eb8;
   --dot-gray: #98a2ad;
   --dot-cancel: #374151;
-  /* The outline and fill of the Agenda's pills, around the LED dots. */
+  /* The outline of the Agenda's pills around the LED dots; the fill a step darker, so the lit colours
+     stand out. */
   --led-line: #cbc2da;
-  --led-fill: #f4f0fa;
+  --led-fill: #ebe7f3;
+  /* LED colours, chosen further apart than the --dot-* accents (pedido do usuário, 19/10: azul × verde,
+     vermelho × laranja, cinza claro × escuro "quase não dá pra diferenciar"). Each close pair differs in
+     lightness as well as hue, which survives small dots, colour-blindness and the yellowed lens of older
+     eyes. CIEDE2000, normal vision (before → now): azul × verde 46.9 → 66.6 (20.1 → 29.9 for tritan
+     vision), vermelho × laranja 15.9 → 31.8, laranja × amarelo 31.9 → 35.0, cinza × cinza escuro
+     38.0 → 57.5. */
+  --led-red: #c8102e;
+  --led-orange: #ff7a00;
+  --led-yellow: #ffe000;
+  --led-green: #3cc23c;
+  --led-blue: #1f4fd1;
+  --led-gray: #b4bcc6;
+  --led-cancel: #1f2933;
   color-scheme: light;
 }
 
@@ -196,35 +210,41 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
    8 dots inside a gray outline (the Agenda's line and fill), without its priority label. */
 .dot-signals { display: inline-flex; align-items: center; gap: var(--dot-gap); padding: 3px 5px; border: 1px solid var(--led-line); border-radius: 999px; background: var(--led-fill); vertical-align: middle; flex-shrink: 0; line-height: 0; }
 .geo-dot { display: inline-block; width: var(--dot-size); height: var(--dot-size); min-width: var(--dot-size); border-radius: 50%; flex-shrink: 0; background: currentColor; }
-.dot-signal--red { color: var(--dot-red); }
-.dot-signal--orange { color: var(--dot-orange); }
-.dot-signal--green { color: var(--dot-green); }
-.dot-signal--yellow { color: var(--dot-yellow); }
-.dot-signal--blue { color: var(--dot-blue); }
-.dot-signal--gray { color: var(--dot-gray); }
-.dot-signal--cancel { color: var(--dot-cancel); }
+.dot-signal--red { color: var(--led-red); }
+.dot-signal--orange { color: var(--led-orange); }
+.dot-signal--green { color: var(--led-green); }
+.dot-signal--yellow { color: var(--led-yellow); }
+.dot-signal--blue { color: var(--led-blue); }
+.dot-signal--gray { color: var(--led-gray); }
+.dot-signal--cancel { color: var(--led-cancel); }
 /* Few lights, blinking like aircraft strobes (pedidos do usuário, 19/10: "parecendo carnaval"; "com
    2 leds, esquema Airbus; com 1 led, esquema Boeing"): Airbus wing strobes flash twice in quick
    succession, Boeing ones once (spotting guides). Off, a dot rests pale (15%).
    Active, confirmed, paid (green, blue; a running session): 2 dots every 800 ms (75 a minute, inside the
    40-100 of aviation anti-collision lights), the Airbus double flash shared left to right, like the
-   sequential turn signal: the left dot flashes, the right one 120 ms later; each snaps on in about
-   25 ms and is gone by 175 ms, so the two flashes stay apart.
+   sequential turn signal: the left dot flashes, the right one 160 ms later; each snaps on in about
+   25 ms, holds about 50 ms and is gone by 190 ms, so the two flashes stay apart.
    Slow (not confirmed or not active, and the alerts red and orange): 1 dot every 1.6 s, the Boeing single
    flash, bursting like an explosion: a brighter pop whose glow spreads out and fades over 700 ms.
    Every 1.6 s all of them flash together (led-sync.js). */
+/* Strong flashes (pedido do usuário, 19/10: "as piscadas precisam ser mais fortes"): full colour,
+   more saturated and with a wider glow, held at the peak (about 50 ms) so the eye registers it; off,
+   the dot rests at 12%. */
 @keyframes led-strobe {
-  0% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
-  3% { opacity: 1; transform: scale(1.2); box-shadow: 0 0 4px 1px currentColor; animation-timing-function: cubic-bezier(0.15, 0.6, 0.35, 1); }
-  22%, 100% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 8px 3px transparent; }
+  0% { opacity: 0.12; transform: scale(1); filter: saturate(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
+  3% { opacity: 1; transform: scale(1.2); filter: saturate(1.5); box-shadow: 0 0 6px 2px currentColor; }
+  9% { opacity: 1; transform: scale(1.2); filter: saturate(1.5); box-shadow: 0 0 6px 2px currentColor; animation-timing-function: cubic-bezier(0.15, 0.6, 0.35, 1); }
+  24%, 100% { opacity: 0.12; transform: scale(1); filter: saturate(1); box-shadow: 0 0 9px 3px transparent; }
 }
 @keyframes led-burst {
-  0% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
-  3% { opacity: 1; transform: scale(1.35); box-shadow: 0 0 5px 2px currentColor; animation-timing-function: cubic-bezier(0.1, 0.7, 0.3, 1); }
-  45%, 100% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 16px 7px transparent; }
+  0% { opacity: 0.12; transform: scale(1); filter: saturate(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
+  3% { opacity: 1; transform: scale(1.35); filter: saturate(1.5); box-shadow: 0 0 7px 3px currentColor; }
+  7% { opacity: 1; transform: scale(1.35); filter: saturate(1.5); box-shadow: 0 0 7px 3px currentColor; animation-timing-function: cubic-bezier(0.1, 0.7, 0.3, 1); }
+  45%, 100% { opacity: 0.12; transform: scale(1); filter: saturate(1); box-shadow: 0 0 16px 7px transparent; }
 }
 .dot-signals .geo-dot { animation: led-strobe 800ms linear infinite backwards; }
-.dot-signals .geo-dot:nth-child(2) { animation-delay: 120ms; }
+/* The second flash of the Airbus pair, after the first has gone. */
+.dot-signals .geo-dot:nth-child(2) { animation-delay: 160ms; }
 .dot-signals--slow .geo-dot { animation-name: led-burst; animation-duration: 1600ms; }
 /* A slow strip with several colours (the day's alerts) flashes them one after the other. */
 .dot-signals--slow .geo-dot:nth-child(2) { animation-delay: 120ms; }
@@ -665,7 +685,9 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .session-bar .dot-signals { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.15); }
 
 /* Rounded things: the LED bulbs, the day count, today's number. */
-.geo-dot { background-image: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 60%); }
+/* A small highlight and a darker rim: a round bulb whose colour stays strong (a large white highlight
+   washed the 5 px dots out), and light colours (yellow, light gray) keep an edge on the light pill. */
+.geo-dot { background-image: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 32%), radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.28) 100%); }
 .count-badge, .day-cell.today .day-num { background-image: var(--sphere); box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(var(--depth-shade), 0.3); }
 
 @media print {
