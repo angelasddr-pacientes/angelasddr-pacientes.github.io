@@ -3327,29 +3327,40 @@ async function startCloudSync({ config, emulatorHost = null, current, onRemote, 
   function receive(snapshot) {
     const { metadata } = snapshot;
     update({ state: stateOf(metadata), error: '' });
-    if (snapshot.empty) {
-      // An empty cache says nothing about the cloud; only the server can say it is empty.
-      if (!metadata.fromCache && !ready) {
+    const parts = new Map(snapshot.docs.map((document) => [document.id, document.data().json]));
+    const remote = joinParts(parts);
+    // A cloud without patients counts as empty and never replaces this device's records.
+    // An empty cache says nothing about the cloud; only the server can say it is empty.
+    if (!remote?.dataset.patients?.length) {
+      if (metadata.fromCache) return;
+      known = parts;
+      if (!ready) {
         ready = true;
-        known = new Map();
         onEmptyCloud();
       }
       return;
     }
-    const parts = new Map(snapshot.docs.map((document) => [document.id, document.data().json]));
     known = parts;
     ready = true;
-    // While a save is waiting or unconfirmed, the snapshot only echoes this device's own records;
-    // a snapshot from the cache is this device's earlier copy. Only the server brings other devices' changes.
-    if (metadata.hasPendingWrites || timer || metadata.fromCache) return;
-    if (hasPending()) {
-      write();
-      return;
-    }
-    const remote = joinParts(parts);
+    // An unconfirmed save makes the snapshot echo this device's own records; a snapshot from the
+    // cache is this device's earlier copy. Only the server brings other devices' changes.
+    if (metadata.hasPendingWrites || metadata.fromCache) return;
     const local = current();
+    // A change waiting to go up wins over the cloud, unless this device has no patients:
+    // then it has nothing to keep and the cloud's records are taken.
+    if (local.dataset.patients?.length) {
+      if (timer) return;
+      if (hasPending()) {
+        write();
+        return;
+      }
+    } else {
+      clearTimeout(timer);
+      timer = null;
+      setPending(false);
+    }
     const { changed, removed } = diffParts(splitIntoParts(local.dataset, local.notepad), parts);
-    if (remote && (changed.length || removed.length)) onRemote(remote);
+    if (changed.length || removed.length) onRemote(remote);
   }
 
   function listen() {
@@ -3362,8 +3373,9 @@ async function startCloudSync({ config, emulatorHost = null, current, onRemote, 
     timer = null;
     if (!ready || !authInstance.currentUser) return;
     const local = current();
-    // A device without patients (fresh, or just signed out) never overwrites the cloud's records.
-    if (!local.dataset.patients?.length && known.size) {
+    // A device without patients (fresh, or just signed out) never writes: an empty record in the
+    // cloud would look like the consultório's data to the next device.
+    if (!local.dataset.patients?.length) {
       setPending(false);
       return;
     }
@@ -3798,6 +3810,51 @@ function renderBackupIndicator(container, status, backup, openSettings) {
 
 return { backupSnapshot, backupStatusText, reconnectBackup, backupStatusLine, refreshBackupStatus, renderBackupIndicator };
 })();
+modules["ui/replace-data.js"] = (() => {
+const { migrateDataset } = modules["domain/migrations.js"];
+const { toast } = modules["ui/components.js"];
+const { formatInteger, h } = modules["ui/dom.js"];
+const { replaceNotepad } = modules["ui/notepad.js"];
+function datasetSummary(dataset) {
+  return `${formatInteger(dataset.patients.length)} pacientes, ${formatInteger(dataset.sessions.length)} sessões e ${formatInteger(dataset.payments.length)} lançamentos de pagamento`;
+}
+
+/** Replaces every record, settings included, after confirmation; true when replaced. */
+function confirmReplace(app, dataset, origin) {
+  const message = `${origin}: ${datasetSummary(dataset)}.\n\nIsto substitui TODOS os dados atuais, inclusive o que foi registrado no sistema. Exporte um backup antes, se precisar.\n\nSubstituir agora?`;
+  if (!confirm(message)) return false;
+  app.commit(dataset);
+  app.setUi({ patientId: null, view: 'painel' });
+  toast('Dados substituídos.');
+  return true;
+}
+
+/** Hidden file input: restores the backup .json the user picks (the notepad goes with it). */
+function backupRestoreInput(app) {
+  return h('input', {
+    type: 'file',
+    accept: '.json,application/json',
+    class: 'visually-hidden',
+    onChange: async (event) => {
+      const [file] = event.target.files;
+      event.target.value = '';
+      if (!file) return;
+      try {
+        const { notepad: notes, savedAt: backupSavedAt, ...records } = JSON.parse(await file.text());
+        const data = migrateDataset(records);
+        if (!data) throw new Error('arquivo não é um backup deste sistema');
+        if (!data.patients.length) throw new Error('o arquivo não tem nenhum paciente (backup vazio)');
+        const savedAt = backupSavedAt ? ` (salvo em ${new Date(backupSavedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })})` : '';
+        if (confirmReplace(app, data, `Backup "${file.name}"${savedAt}`)) replaceNotepad(notes);
+      } catch (error) {
+        toast(`Backup inválido: ${error.message}.`, 'danger');
+      }
+    },
+  });
+}
+
+return { datasetSummary, confirmReplace, backupRestoreInput };
+})();
 modules["ui/cloud-session.js"] = (() => {
 const { migrateDataset } = modules["domain/migrations.js"];
 const { CLOUD_STATE, readCloudConfig, readEmulatorHost, startCloudSync } = modules["infra/cloud-sync.js"];
@@ -3805,6 +3862,7 @@ const { forgetSavedDataset } = modules["infra/storage.js"];
 const { button, card, toast } = modules["ui/components.js"];
 const { h, replaceChildren } = modules["ui/dom.js"];
 const { NOTEPAD_SAVED_EVENT, readNotepad, replaceNotepad } = modules["ui/notepad.js"];
+const { backupRestoreInput } = modules["ui/replace-data.js"];
 const LABELS = {
   [CLOUD_STATE.LOADING]: 'Conectando…',
   [CLOUD_STATE.SIGNED_OUT]: 'Entrar',
@@ -3827,16 +3885,20 @@ const TONE = {
 /** The hosted build keeps the records in the cloud; the single file opened from disk does not. */
 const isCloudBuild = () => readCloudConfig() !== null;
 
+/** Lock screen of a cloud that answered without the consultório's records. */
+const EMPTY_CLOUD = 'vazio';
+
 /**
  * The cloud state shown in place of the records, or null when the records are shown.
- * Until someone with access signs in, no record is shown. A device without records waits for
- * the cloud: an empty agenda while it answers (or fails to) looks like lost data.
+ * Until someone with access signs in, no record is shown. A device without records never shows
+ * an empty agenda, which looks like lost data: it waits for the cloud, or says the cloud is empty.
  */
 function lockScreenOf(app) {
   const state = app.cloud?.status.state;
   if (state === CLOUD_STATE.SIGNED_OUT || state === CLOUD_STATE.DENIED) return state;
-  const waiting = [CLOUD_STATE.LOADING, CLOUD_STATE.OFFLINE, CLOUD_STATE.ERROR].includes(state);
-  return waiting && !app.dataset.patients.length ? state : null;
+  if (!state || app.dataset.patients.length) return null;
+  if ([CLOUD_STATE.LOADING, CLOUD_STATE.OFFLINE, CLOUD_STATE.ERROR].includes(state)) return state;
+  return EMPTY_CLOUD;
 }
 
 const isLocked = (app) => lockScreenOf(app) !== null;
@@ -3866,7 +3928,12 @@ const lockButton = (label, onClick, variant = 'primary') => h('button', { type: 
 function renderLockScreen(app) {
   const { state, email, error } = app.cloud.status;
   const retry = () => location.reload();
+  const restoreInput = backupRestoreInput(app);
   const screens = {
+    [EMPTY_CLOUD]: [
+      'A nuvem ainda está sem os dados do consultório. Restaure o backup uma vez, em qualquer aparelho, e eles aparecem em todos os outros.',
+      [lockButton('Restaurar backup', () => restoreInput.click()), restoreInput],
+    ],
     [CLOUD_STATE.SIGNED_OUT]: [
       'Entre com a sua conta Google para ver e salvar os dados do consultório. Basta fazer isso uma vez em cada aparelho.',
       lockButton('Entrar com Google', () => app.cloud.api?.signIn()),
@@ -3879,7 +3946,7 @@ function renderLockScreen(app) {
     [CLOUD_STATE.OFFLINE]: ['Sem internet. Conecte este aparelho à internet para carregar os dados.', lockButton('Tentar de novo', retry)],
     [CLOUD_STATE.ERROR]: ['Não foi possível conectar à nuvem. Confira a internet e toque em "Tentar de novo".', lockButton('Tentar de novo', retry)],
   };
-  const [text, action] = screens[state];
+  const [text, action] = screens[lockScreenOf(app)];
   return h(
     'div',
     { class: 'signin' },
@@ -3956,10 +4023,9 @@ async function startCloud(app) {
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && app.cloud.api.flush());
 }
 
-return { isCloudBuild, lockScreenOf, isLocked, renderLockScreen, cloudCard, startCloud };
+return { isCloudBuild, EMPTY_CLOUD, lockScreenOf, isLocked, renderLockScreen, cloudCard, startCloud };
 })();
 modules["ui/views/data.js"] = (() => {
-const { migrateDataset } = modules["domain/migrations.js"];
 const { saveSettings } = modules["domain/mutations.js"];
 const { importWorkbookFile } = modules["infra/excel-import.js"];
 const { BACKUP_STATE } = modules["infra/file-backup.js"];
@@ -3970,22 +4036,8 @@ const { LED_MOTION, readLedMotion, saveLedMotion, systemReducesMotion } = module
 const { backupSnapshot, backupStatusLine, reconnectBackup } = modules["ui/backup-status.js"];
 const { formatInteger, formatMoney, h } = modules["ui/dom.js"];
 const { cloudCard } = modules["ui/cloud-session.js"];
-const { replaceNotepad } = modules["ui/notepad.js"];
+const { backupRestoreInput, confirmReplace, datasetSummary } = modules["ui/replace-data.js"];
 const showDate = (value) => (isIsoDate(value) ? formatDate(value) : `"${value}"`);
-
-function datasetSummary(dataset) {
-  return `${formatInteger(dataset.patients.length)} pacientes, ${formatInteger(dataset.sessions.length)} sessões e ${formatInteger(dataset.payments.length)} lançamentos de pagamento`;
-}
-
-/** Replaces every record, settings included, after confirmation; true when replaced. */
-function confirmReplace(app, dataset, origin) {
-  const message = `${origin}: ${datasetSummary(dataset)}.\n\nIsto substitui TODOS os dados atuais, inclusive o que foi registrado no sistema. Exporte um backup antes, se precisar.\n\nSubstituir agora?`;
-  if (!confirm(message)) return false;
-  app.commit(dataset);
-  app.setUi({ patientId: null, view: 'painel' });
-  toast('Dados substituídos.');
-  return true;
-}
 
 function importCard(app) {
   const status = h('p', { class: 'muted', role: 'status' });
@@ -4321,26 +4373,7 @@ function appearanceCard() {
 
 function backupCard(app) {
   const inCloud = Boolean(app.cloud);
-  const restoreInput = h('input', {
-    type: 'file',
-    accept: '.json,application/json',
-    class: 'visually-hidden',
-    onChange: async (event) => {
-      const [file] = event.target.files;
-      event.target.value = '';
-      if (!file) return;
-      try {
-        const { notepad: notes, savedAt: backupSavedAt, ...records } = JSON.parse(await file.text());
-        const data = migrateDataset(records);
-        if (!data) throw new Error('arquivo não é um backup deste sistema');
-        if (!data.patients.length) throw new Error('o arquivo não tem nenhum paciente (backup vazio)');
-        const savedAt = backupSavedAt ? ` (salvo em ${new Date(backupSavedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })})` : '';
-        if (confirmReplace(app, data, `Backup "${file.name}"${savedAt}`)) replaceNotepad(notes);
-      } catch (error) {
-        toast(`Backup inválido: ${error.message}.`, 'danger');
-      }
-    },
-  });
+  const restoreInput = backupRestoreInput(app);
   return card(
     {},
     h('h3', { class: 'card-title' }, 'Backup'),
