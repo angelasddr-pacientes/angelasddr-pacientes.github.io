@@ -72,6 +72,9 @@
   --dot-blue: #2d6eb8;
   --dot-gray: #98a2ad;
   --dot-cancel: #374151;
+  /* The outline and fill of the Agenda's pills, around the LED dots. */
+  --led-line: #cbc2da;
+  --led-fill: #f4f0fa;
   color-scheme: light;
 }
 
@@ -137,6 +140,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .backup-pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); font-weight: 600; font-size: 0.8rem; cursor: pointer; }
+/* The button is already the outline around its LED dots. */
+.backup-pill .dot-signals { border: none; background: none; padding: 0; }
 .backup-pill--reautorizar { border-color: var(--dot-orange); }
 .backup-pill--erro { border-color: var(--dot-red); color: var(--danger); }
 .cloud-pill--sem-acesso, .cloud-pill--erro { border-color: var(--dot-red); color: var(--danger); }
@@ -187,9 +192,9 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .info-list dt { font-size: 0.78rem; color: var(--muted); }
 .info-list dd { margin: 0; font-weight: 500; }
 
-/* —— Geometric LED signals (same spec as the Agenda Digital) —— */
-.dot-signals { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; flex-shrink: 0; }
-.dot-signal { display: inline-flex; align-items: center; gap: var(--dot-gap); flex-shrink: 0; }
+/* —— LED strips: the pills of the Agenda do André (video of 19/10, measured frame by frame) ——
+   8 dots inside a gray outline (the Agenda's line and fill), without its priority label. */
+.dot-signals { display: inline-flex; align-items: center; gap: var(--dot-gap); padding: 3px 5px; border: 1px solid var(--led-line); border-radius: 999px; background: var(--led-fill); vertical-align: middle; flex-shrink: 0; line-height: 0; }
 .geo-dot { display: inline-block; width: var(--dot-size); height: var(--dot-size); min-width: var(--dot-size); border-radius: 50%; flex-shrink: 0; background: currentColor; }
 .dot-signal--red { color: var(--dot-red); }
 .dot-signal--orange { color: var(--dot-orange); }
@@ -198,35 +203,28 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .dot-signal--blue { color: var(--dot-blue); }
 .dot-signal--gray { color: var(--dot-gray); }
 .dot-signal--cancel { color: var(--dot-cancel); }
-/* Every LED blinks like a lamp (the Agenda's "piscada orgânica", with a longer fade): it lights up
-   fast (ease-out, 11% of the cycle), stays lit until 40%, fades slowly (ease-in-out, until 75%) and
-   rests dark (opacity 0.1, as in the Agenda's pontoNatural). The dots of a signal light up from left
-   to right, one step apart, and go out in the same order (the Agenda's seta-pontos: 24 ms in 800 ms).
-   Alerts (red, orange, green) blink every 800 ms, as in the Agenda; the calm colors every 1.6 s.
-   Green and the calm colors glow stronger: the halo and saturation of the Agenda's "luz de freio",
-   without its brightness(1.28), which washes the gray out on the light background. */
-@keyframes led {
-  0% { opacity: 0.1; box-shadow: 0 0 0 0 transparent; animation-timing-function: ease-out; }
-  11% { opacity: 1; box-shadow: 0 0 4px 1px currentColor; }
-  40% { opacity: 1; box-shadow: 0 0 4px 1px currentColor; animation-timing-function: ease-in-out; }
-  75%, 100% { opacity: 0.1; box-shadow: 0 0 0 0 transparent; }
+/* The sequence of the video, like a car's sequential turn signal (the Agenda's rule for appointment
+   dots, 05/10, stretched to 8 dots): every 800 ms the dots light up from left to right, 24 ms (3%)
+   apart, each fading in for 88 ms (11%) with a glow; once the last is lit, they go out in the same
+   order, also 24 ms apart and fading for 88 ms; then the strip rests pale (15%) until the next cycle.
+   Every strip, of every colour, blinks at this pace and in step (led-sync.js). */
+@keyframes led-seta {
+  0% { opacity: 0.15; box-shadow: none; }
+  11%, 32% { opacity: 1; box-shadow: 0 0 3px 0 currentColor; }
+  43%, 100% { opacity: 0.15; box-shadow: none; }
 }
-@keyframes led-forte {
-  0% { opacity: 0.1; box-shadow: 0 0 0 0 transparent; filter: none; animation-timing-function: ease-out; }
-  11% { opacity: 1; box-shadow: 0 0 5px 1px currentColor; filter: saturate(1.45); }
-  40% { opacity: 1; box-shadow: 0 0 5px 1px currentColor; filter: saturate(1.45); animation-timing-function: ease-in-out; }
-  75%, 100% { opacity: 0.1; box-shadow: 0 0 0 0 transparent; filter: none; }
-}
-.dot-signal { --led-cycle: 1.6s; --led-step: 48ms; }
-:is(.dot-signal--red, .dot-signal--orange, .dot-signal--green) { --led-cycle: 800ms; --led-step: 24ms; }
-.dot-signal .geo-dot { animation-name: led-forte; animation-duration: var(--led-cycle); animation-iteration-count: infinite; animation-fill-mode: backwards; }
-:is(.dot-signal--red, .dot-signal--orange) .geo-dot { animation-name: led; }
-.dot-signal .geo-dot:nth-child(2) { animation-delay: var(--led-step); }
-.dot-signal .geo-dot:nth-child(3) { animation-delay: calc(var(--led-step) * 2); }
+.dot-signals .geo-dot { animation: led-seta 800ms ease-in-out infinite backwards; }
+.dot-signals .geo-dot:nth-child(2) { animation-delay: 24ms; }
+.dot-signals .geo-dot:nth-child(3) { animation-delay: 48ms; }
+.dot-signals .geo-dot:nth-child(4) { animation-delay: 72ms; }
+.dot-signals .geo-dot:nth-child(5) { animation-delay: 96ms; }
+.dot-signals .geo-dot:nth-child(6) { animation-delay: 120ms; }
+.dot-signals .geo-dot:nth-child(7) { animation-delay: 144ms; }
+.dot-signals .geo-dot:nth-child(8) { animation-delay: 168ms; }
 /* Like the Agenda Digital, LEDs respect the system's "reduce motion"; the user may ask the
    app to keep them blinking anyway (Configurações › Aparência sets data-leds="sempre"). */
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-leds="sempre"]) .dot-signal .geo-dot { animation: none !important; opacity: 1; }
+  :root:not([data-leds="sempre"]) .dot-signals .geo-dot { animation: none !important; opacity: 1; }
 }
 .signal-label { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.8rem; color: var(--muted); }
@@ -252,7 +250,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .day-cell:hover { background: var(--today-bg); }
 .day-cell.other-month { background: color-mix(in srgb, var(--bg) 70%, var(--card)); color: var(--other-month); }
 .day-cell.today { background: var(--today-bg); box-shadow: inset 0 0 0 2px var(--accent); }
-.day-head { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 1.25rem; }
+.day-head { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; width: 100%; min-height: 1.25rem; }
 .day-head .day-signal { margin-left: auto; flex-shrink: 0; }
 .day-cell.holiday { background: color-mix(in srgb, var(--dot-red) 5%, var(--card)); }
 .day-tags { display: flex; flex-wrap: wrap; gap: 3px; }
@@ -264,8 +262,12 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .day-num { font-size: 0.82rem; font-weight: 700; padding: 1px 5px; border-radius: 999px; }
 .day-cell.today .day-num { background: var(--accent); color: var(--on-accent); }
 .count-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.15rem; height: 1.15rem; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 0.62rem; font-weight: 700; }
-.day-entry { display: flex; align-items: center; gap: 4px; font-size: 0.7rem; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.day-entry span:last-child { overflow: hidden; text-overflow: ellipsis; }
+/* The LED strip, then the time and the name; where both do not fit, the time and name go to the line
+   below, whole, instead of being cut. */
+.day-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; font-size: 0.7rem; line-height: 1.25; }
+.day-entry > span:last-child { min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* More space between two sessions than between a strip and its own time and name. */
+.day-entry + .day-entry { margin-top: 4px; }
 .day-more { font-size: 0.68rem; color: var(--muted); }
 .day-free { margin-top: auto; font-size: 0.66rem; color: var(--accent-bright); font-weight: 600; }
 
@@ -273,8 +275,9 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
 .week-day { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 12rem; }
 .week-day.today { box-shadow: inset 0 0 0 2px var(--accent); }
-.week-day__head { display: flex; justify-content: space-between; align-items: center; gap: 4px; font-weight: 700; font-size: 0.85rem; background: none; border: none; padding: 0; cursor: pointer; }
-.week-day__marks { display: inline-flex; align-items: center; gap: 5px; }
+.week-day__head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px; font-weight: 700; font-size: 0.85rem; background: none; border: none; padding: 0; cursor: pointer; text-align: left; }
+/* The count and the day's LED strip go below the date when the column is narrow. */
+.week-day__marks { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .entry-chip { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 0.78rem; cursor: pointer; text-align: left; width: 100%; min-width: 0; overflow: hidden; }
 .entry-chip > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-chip:hover { border-color: var(--accent); }
@@ -345,9 +348,8 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .session-bar__stop { background: #fff; color: var(--ink); }
 .session-bar__stop:hover { background: #e8eef6; }
 .session-bar--running { position: sticky; top: 0; z-index: 5; }
-/* A larger LED that blinks at the alert pace in either color. */
-.session-bar .dot-signal { --led-cycle: 800ms; --led-step: 24ms; }
-.session-bar .geo-dot { width: 9px; height: 9px; min-width: 9px; }
+/* Larger dots, and the outline light on the navy bar. */
+.session-bar .dot-signals { --dot-size: 7px; --led-line: rgba(255, 255, 255, 0.45); --led-fill: rgba(255, 255, 255, 0.1); padding: 4px 7px; }
 /* Past the agreed length: amber, still counting. */
 .session-bar--overtime { background-color: #8a3a06; }
 .session-bar--overtime .session-bar__digits { color: #ffd8a8; }
@@ -568,6 +570,8 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
   .day-tags { display: none; }
   .day-cell { min-height: 3.4rem; padding: 4px 3px; }
   .day-entry, .day-more { display: none; }
+  /* The day's strip fits the narrow cell: smaller dots, on its own line. */
+  .day-cell .dot-signals { --dot-size: 3px; --dot-gap: 1px; padding: 2px 3px; }
   .day-free { font-size: 0.6rem; }
   .nav-period__label { min-width: 0; font-size: 0.95rem; }
   .page-actions, .period { width: 100%; }
@@ -603,7 +607,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
   body { background: #fff; }
   .card, .cal-wrap { box-shadow: none; }
   /* On paper a blinking LED would come out at whatever brightness it had at that instant. */
-  .dot-signal .geo-dot { animation: none !important; opacity: 1; }
+  .dot-signals .geo-dot { animation: none !important; opacity: 1; }
 }
 /* Problems next to the field they are about, and the live check of a day and time (Agendar, Remarcar). */
 .field-error { margin: 2px 0 0; color: var(--danger); font-size: 0.95rem; font-weight: 600; }
@@ -1748,7 +1752,7 @@ const SIGNAL = Object.freeze({
 
 // Same order as the Agenda Digital legend: alerts first.
 const SIGNAL_LEGEND = [
-  [SIGNAL.RED, 'vermelho · falta (2 pontos = sem aviso)'],
+  [SIGNAL.RED, 'vermelho · falta'],
   [SIGNAL.ORANGE, 'laranja · desmarcou em cima da hora'],
   [SIGNAL.YELLOW, 'amarelo · sem registro / em aberto'],
   [SIGNAL.GREEN, 'verde · agendada'],
@@ -1773,7 +1777,9 @@ function attendanceSignal(entry, settings, today) {
       return signal(SIGNAL.BLUE, 'Realizada');
     case ATTENDANCE.ABSENT: {
       const withoutNotice = notice === NOTICE.NONE || (notice === null && noticeHours === null);
-      return signal(SIGNAL.RED, fee > 0 ? 'Falta cobrada' : 'Falta', withoutNotice ? 2 : 1);
+      // Every LED strip has the same dots now: "without notice" is said in words.
+      const label = withoutNotice ? `Falta sem aviso${fee > 0 ? ', cobrada' : ''}` : fee > 0 ? 'Falta cobrada' : 'Falta';
+      return signal(SIGNAL.RED, label, withoutNotice ? 2 : 1);
     }
     case ATTENDANCE.CANCELLED_BY_PATIENT:
       return lateNotice ? signal(SIGNAL.ORANGE, 'Desmarcou em cima da hora') : signal(SIGNAL.GRAY, 'Desmarcou com antecedência');
@@ -1884,23 +1890,30 @@ modules["ui/components.js"] = (() => {
 const { SIGNAL_LEGEND } = modules["domain/signals.js"];
 const { formatMonth } = modules["lib/dates.js"];
 const { h } = modules["ui/dom.js"];
-/** Geometric LED signal, as in the Agenda Digital: `count` dots of one colour. */
-function signalDots({ tone, count = 1, label = '' }) {
+// Every LED is a strip of dots inside a gray outline, lit in sequence (styles.css): the pills of the
+// Agenda do André (its P1 has 8 dots), without the priority label.
+const LED_DOTS = 8;
+
+/** The strip's dots shared among the colours, in order: one colour takes them all. */
+function stripTones(tones) {
+  const share = Math.floor(LED_DOTS / tones.length);
+  const extra = LED_DOTS % tones.length;
+  return tones.flatMap((tone, index) => Array(share + (index < extra ? 1 : 0)).fill(tone));
+}
+
+function ledStrip(tones, { label = '', className = '' }) {
   return h(
     'span',
-    { class: 'dot-signals', title: label || null, 'aria-hidden': label ? null : 'true' },
-    h('span', { class: `dot-signal dot-signal--${tone}` }, Array.from({ length: count }, () => h('span', { class: 'geo-dot' }))),
+    { class: `dot-signals ${className}`.trim(), title: label || null, 'aria-hidden': label ? null : 'true' },
+    stripTones(tones).map((tone) => h('span', { class: `geo-dot dot-signal--${tone}` })),
   );
 }
 
-/** Several LED colours side by side (the merged signal of a day). */
-function signalGroup(parts, className = '') {
-  return h(
-    'span',
-    { class: `dot-signals ${className}`.trim(), 'aria-hidden': 'true' },
-    parts.map(({ tone, count }) => h('span', { class: `dot-signal dot-signal--${tone}` }, Array.from({ length: count }, () => h('span', { class: 'geo-dot' })))),
-  );
-}
+/** Geometric LED signal of one colour. */
+const signalDots = ({ tone, label = '' }, className = '') => ledStrip([tone], { label, className });
+
+/** Several LED colours in one strip (the merged signal of a day). */
+const signalGroup = (parts, className = '') => ledStrip(parts.map(({ tone }) => tone), { className });
 
 /** LED followed by its meaning in words, so colour is never the only cue. */
 const signalLabel = (signal) => (signal ? h('span', { class: 'signal-label' }, signalDots(signal), h('span', {}, signal.label)) : h('span', { class: 'muted' }, '—'));
@@ -1909,7 +1922,7 @@ function signalLegend() {
   return h(
     'p',
     { class: 'legend', 'aria-label': 'Legenda dos sinais' },
-    SIGNAL_LEGEND.map(([tone, label]) => h('span', { class: 'legend-item' }, signalDots({ tone, count: tone === 'red' ? 2 : 1 }), label)),
+    SIGNAL_LEGEND.map(([tone, label]) => h('span', { class: 'legend-item' }, signalDots({ tone }), label)),
   );
 }
 
@@ -2033,7 +2046,7 @@ function toast(message, tone = 'success') {
   setTimeout(() => element.remove(), 3500);
 }
 
-return { signalDots, signalGroup, signalLabel, signalLegend, button, kpiCard, card, emptyState, pageHeader, sectionTitle, field, select, table, periodPicker, periodLabel, openDialog, toast };
+return { LED_DOTS, signalDots, signalGroup, signalLabel, signalLegend, button, kpiCard, card, emptyState, pageHeader, sectionTitle, field, select, table, periodPicker, periodLabel, openDialog, toast };
 })();
 modules["domain/parsing/cells.js"] = (() => {
 const { stripAccents } = modules["lib/text.js"];
@@ -4104,7 +4117,7 @@ return { NOTEPAD_SAVED_EVENT, readNotepad, replaceNotepad, notepad };
 })();
 modules["ui/backup-status.js"] = (() => {
 const { BACKUP_STATE } = modules["infra/file-backup.js"];
-const { toast } = modules["ui/components.js"];
+const { signalDots, toast } = modules["ui/components.js"];
 const { h, replaceChildren } = modules["ui/dom.js"];
 const { readNotepad } = modules["ui/notepad.js"];
 const STATUS_CLASS = 'backup-status';
@@ -4137,7 +4150,7 @@ function backupStatusText(status) {
   }
 }
 
-const dot = (state) => h('span', { class: `dot-signals` }, h('span', { class: `dot-signal dot-signal--${TONE[state]}` }, h('span', { class: 'geo-dot' })));
+const dot = (state) => signalDots({ tone: TONE[state] });
 
 async function reconnectBackup(backup) {
   await backup.reconnect();
@@ -4221,7 +4234,7 @@ modules["ui/cloud-session.js"] = (() => {
 const { migrateDataset } = modules["domain/migrations.js"];
 const { CLOUD_STATE, readCloudConfig, readEmulatorHost, startCloudSync } = modules["infra/cloud-sync.js"];
 const { forgetSavedDataset } = modules["infra/storage.js"];
-const { button, card, toast } = modules["ui/components.js"];
+const { button, card, signalDots, toast } = modules["ui/components.js"];
 const { h, replaceChildren } = modules["ui/dom.js"];
 const { NOTEPAD_SAVED_EVENT, readNotepad, replaceNotepad } = modules["ui/notepad.js"];
 const { backupRestoreInput } = modules["ui/replace-data.js"];
@@ -4265,7 +4278,7 @@ function lockScreenOf(app) {
 
 const isLocked = (app) => lockScreenOf(app) !== null;
 
-const dot = (state) => h('span', { class: 'dot-signals' }, h('span', { class: `dot-signal dot-signal--${TONE[state]}` }, h('span', { class: 'geo-dot' })));
+const dot = (state) => signalDots({ tone: TONE[state] });
 
 function renderIndicator(app) {
   const { state } = app.cloud.status;
@@ -6577,7 +6590,7 @@ const { ATTENDANCE } = modules["domain/status.js"];
 const { isOpenAppointment } = modules["domain/session-timer.js"];
 const { addDaysIso, addMonths, eachDay, endOfMonth, endOfWeek, formatDate, formatDateLong, formatMonthLong, isIsoDate, monthOf, startOfMonth, startOfWeek, WEEKDAY_NAMES, weekdayIndex } = modules["lib/dates.js"];
 const { button, emptyState, openDialog, signalDots, signalGroup, signalLabel, signalLegend } = modules["ui/components.js"];
-const { h } = modules["ui/dom.js"];
+const { h, replaceChildren } = modules["ui/dom.js"];
 const { focusKey, markEntry, updateEntry } = modules["ui/entry-actions.js"];
 const { openSessionForm } = modules["ui/forms.js"];
 const { openRescheduleForm, sessionNoteLines } = modules["ui/scheduling-form.js"];
@@ -6663,7 +6676,7 @@ function dayContent(app, date) {
   const container = h('div', { class: 'stack' });
   const render = () => {
     const entries = buildAgenda(app.dataset, app.indexes, { from: date, to: date }, app.today);
-    container.replaceChildren(...dayBody(app, date, entries, render));
+    replaceChildren(container, dayBody(app, date, entries, render));
   };
   render();
   return container;
@@ -8216,6 +8229,35 @@ function renderPatients(app) {
 
 return { renderPatients };
 })();
+modules["ui/led-sync.js"] = (() => {
+// Keeps every LED strip blinking in step, as in the Agenda do André: a strip drawn later (another view,
+// the session bar, the backup status) joins the cycle the others are in instead of starting its own.
+const LED_ANIMATION = 'led-seta';
+
+function alignLeds() {
+  // getAnimations() applies pending styles first, so strips just added are included.
+  document.getAnimations().forEach((animation) => {
+    if (animation.animationName === LED_ANIMATION && animation.startTime !== 0) animation.startTime = 0;
+  });
+}
+
+/** Aligns the LEDs now and after every change to the page (once per frame at most). */
+function keepLedsInStep(root = document.body) {
+  if (typeof document.getAnimations !== 'function') return;
+  let pending = false;
+  new MutationObserver(() => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      alignLeds();
+    });
+  }).observe(root, { childList: true, subtree: true });
+  alignLeds();
+}
+
+return { keepLedsInStep };
+})();
 modules["domain/daily-quotes.js"] = (() => {
 const { dayOfYear } = modules["lib/dates.js"];
 /**
@@ -8843,6 +8885,7 @@ const { BACKUP_STATE, createFileBackup } = modules["infra/file-backup.js"];
 const { backupSnapshot, refreshBackupStatus, reconnectBackup, renderBackupIndicator } = modules["ui/backup-status.js"];
 const { NOTEPAD_SAVED_EVENT } = modules["ui/notepad.js"];
 const { applyLedMotion } = modules["ui/appearance.js"];
+const { keepLedsInStep } = modules["ui/led-sync.js"];
 const { createSidePanel } = modules["ui/side-panel.js"];
 const { registerOfflineCache } = modules["infra/offline-cache.js"];
 const { isCloudBuild, isLocked, renderLockScreen, startCloud } = modules["ui/cloud-session.js"];
@@ -8998,6 +9041,7 @@ function restoreFocus(container, key) {
 function start() {
   registerOfflineCache();
   applyLedMotion();
+  keepLedsInStep();
   try {
     applyTheme(localStorage.getItem(THEME_KEY));
   } catch {
