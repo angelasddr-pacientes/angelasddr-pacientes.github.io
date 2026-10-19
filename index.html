@@ -282,6 +282,40 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .free-list li + li { margin-top: 2px; }
 .gaps { padding: 12px 14px; background: var(--surface-2); border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: 0.88rem; }
 .gaps ul { margin: 6px 0 0; padding-left: 1.1rem; }
+.gaps__note { margin-top: 6px; color: var(--warn); font-weight: 600; }
+.free-list__note { color: var(--warn); font-weight: 600; }
+
+/* —— Main-screen setup: what the agenda still needs to know (patients' times, working hours) —— */
+.setup-card { border: 2px solid var(--accent-bright); }
+.setup-card > p { margin-bottom: 12px; }
+.setup-block__title { font-size: 0.98rem; font-weight: 700; margin: 6px 0 8px; }
+.setup-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.setup-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 0; border-top: 1px solid var(--border); }
+.setup-row__name { flex: 1 1 14rem; display: flex; flex-direction: column; font-weight: 700; }
+.setup-row__hint { font-weight: 400; font-size: 0.82rem; color: var(--muted); }
+.setup-row__field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; }
+.setup-row__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.setup-block { padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+/* Larger targets for touch and for older eyes (at least 44 px high). */
+.setup-card .input, .setup-card .btn { min-height: 44px; font-size: 1rem; }
+
+/* —— Session bar: today's sessions, or the running session with its timer (as the Agenda's
+   active-timer banner: opaque navy, light-blue digits, a blinking LED) —— */
+.session-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 12px 0 0; padding: 10px 16px; border-radius: var(--radius-sm); background-color: var(--ink); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 50%, rgba(0, 0, 0, 0.12) 100%); color: #fff; box-shadow: var(--shadow); }
+.session-bar__text { flex: 1 1 14rem; font-weight: 500; }
+.session-bar__digits { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; color: #8cbbf0; }
+.session-bar__status { font-size: 0.9rem; }
+.session-bar__start { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.45); color: #fff; min-height: 44px; font-size: 0.95rem; }
+.session-bar__start:hover { background: rgba(255, 255, 255, 0.26); }
+.session-bar__stop { background: #fff; color: var(--ink); }
+.session-bar__stop:hover { background: #e8eef6; }
+.session-bar--running { position: sticky; top: 0; z-index: 5; }
+/* A larger LED that blinks at the alert pace in either color. */
+.session-bar .dot-signal { --led-cycle: 800ms; --led-step: 24ms; }
+.session-bar .geo-dot { width: 9px; height: 9px; min-width: 9px; }
+/* Past the agreed length: amber, still counting. */
+.session-bar--overtime { background-color: #8a3a06; }
+.session-bar--overtime .session-bar__digits { color: #ffd8a8; }
 
 /* —— Tables: fit the width (cells wrap) instead of scrolling sideways —— */
 .table-wrap { max-width: 100%; }
@@ -325,6 +359,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 /* —— Buttons and inputs —— */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 15px; border-radius: 999px; border: 1px solid transparent; font-weight: 600; font-size: 0.88rem; cursor: pointer; white-space: nowrap; }
 .btn--small { padding: 5px 10px; font-size: 0.78rem; }
+.btn--large { min-height: 48px; padding: 12px 22px; font-size: 1.05rem; white-space: normal; text-align: center; }
 .btn--primary { background: var(--accent); color: var(--on-accent); }
 .btn--primary:hover { background: var(--ink-soft); }
 .btn--success { background: var(--dot-blue); color: #fff; }
@@ -359,6 +394,9 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .dialog__header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .dialog__header h3 { font-size: 1.1rem; }
 .dialog__body { padding: 18px; max-height: 78vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.dialog--prompt .dialog__header h3 { font-size: 1.3rem; }
+.prompt__text { font-size: 1.2rem; line-height: 1.5; }
+.prompt__actions { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 6px; }
 .dropzone { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 2.2rem 1rem; border: 3px dashed var(--border); border-radius: var(--radius); background: none; cursor: pointer; font-size: 1.05rem; }
 .dropzone:hover { border-color: var(--accent); background: var(--today-bg); }
 .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 12px 18px; border-radius: 999px; font-weight: 600; box-shadow: var(--shadow); z-index: 10; }
@@ -500,7 +538,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 }
 
 @media print {
-  .tabs, .toolbar, .agenda-bar .btn, .btn, .legend, .side-panel { display: none !important; }
+  .tabs, .toolbar, .agenda-bar .btn, .btn, .legend, .side-panel, #sessionBar, .setup-card { display: none !important; }
   .shell { display: block; }
   body { background: #fff; }
   .card, .cal-wrap { box-shadow: none; }
@@ -522,6 +560,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
       </div>
     </header>
     <div id="backupBanner"></div>
+    <div id="sessionBar"></div>
     <nav class="tabs" id="nav" aria-label="Seções"></nav>
     <div class="shell">
       <main id="main" tabindex="-1">
@@ -1075,6 +1114,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   breakEnd: '',
   sessionMinutes: 50,
   workDays: [1, 2, 3, 4, 5],
+  // The main screen asks the user to confirm the working hours once (they start as defaults).
+  workHoursConfirmed: false,
   // Unpaid charged sessions before this date are not listed as receivable (null = 90 days back).
   receivablesSince: null,
   // Bank-statement client spelling (see clientKey) → patient id, decided by the user.
@@ -1294,13 +1335,17 @@ function buildAgenda(dataset, indexes, { from, to }, today) {
   return entries.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '99').localeCompare(b.time || '99'));
 }
 
-const occupiesSlot = (entry) => entry.time && !(entry.session && FREED_STATUSES.has(entry.session.status));
+const frees = (entry) => Boolean(entry.session && FREED_STATUSES.has(entry.session.status));
+const occupiesSlot = (entry) => entry.time && !frees(entry);
+// The spreadsheet records no times: such an appointment still takes a session's place that day.
+const takesPlaceWithoutTime = (entry) => !entry.time && !frees(entry);
 
 /**
  * Free intervals of the working day long enough for at least one session, with how many
- * sessions fit in each ("encaixes"). Non-working days have none.
+ * sessions fit in each ("encaixes"). Non-working days have none. `fromMinutes` skips the part
+ * of the day already gone (for today).
  */
-function freeSlots(date, dayEntries, settings) {
+function freeSlots(date, dayEntries, settings, fromMinutes = 0) {
   if (!settings.workDays.includes(weekdayIndex(date))) return [];
   const duration = settings.sessionMinutes;
   const busy = dayEntries.filter(occupiesSlot).map((entry) => [minutesOf(entry.time), minutesOf(entry.time) + duration]);
@@ -1309,7 +1354,7 @@ function freeSlots(date, dayEntries, settings) {
 
   const dayEnd = minutesOf(settings.workEnd);
   const gaps = [];
-  let cursor = minutesOf(settings.workStart);
+  let cursor = Math.max(minutesOf(settings.workStart), fromMinutes);
   [...busy, [dayEnd, dayEnd]].forEach(([start, end]) => {
     const gapEnd = Math.min(start, dayEnd);
     if (gapEnd - cursor >= duration) gaps.push({ start: timeOf(cursor), end: timeOf(gapEnd), capacity: Math.floor((gapEnd - cursor) / duration) });
@@ -1320,10 +1365,34 @@ function freeSlots(date, dayEntries, settings) {
 
 const freeCapacity = (slots) => slots.reduce((total, slot) => total + slot.capacity, 0);
 
+/**
+ * The day's free slots and how many sessions still fit. Appointments without a time cannot be
+ * placed in a slot, so each one comes off the total (`untimed` counts them): the number of
+ * vacancies is never more than the real one.
+ */
+function dayVacancies(date, dayEntries, settings, fromMinutes = 0) {
+  const slots = freeSlots(date, dayEntries, settings, fromMinutes);
+  const untimed = dayEntries.filter(takesPlaceWithoutTime).length;
+  return { slots, untimed, capacity: Math.max(0, freeCapacity(slots) - untimed) };
+}
+
+/**
+ * What the agenda still needs to know about active patients seen on a fixed day: each weekly slot
+ * without a time (`index` of the slot) and each patient without any slot (`index` -1).
+ */
+function scheduleGaps(patients, activeIds) {
+  return patients
+    .filter((patient) => activeIds.has(patient.id) && WEEKS_BETWEEN[patient.frequency])
+    .flatMap((patient) => {
+      if (!patient.schedule?.length) return [{ patient, index: -1 }];
+      return patient.schedule.flatMap((slot, index) => (slot.time ? [] : [{ patient, index }]));
+    });
+}
+
 /** When a session starts and ends ("14:00–14:50"), from its start time and the session length; '' without a time. */
 const sessionTimeRange = (time, settings) => (time ? `${time}–${timeOf(minutesOf(time) + settings.sessionMinutes)}` : '');
 
-return { ENTRY_KIND, scheduledSlotsOn, buildAgenda, freeSlots, freeCapacity, sessionTimeRange };
+return { ENTRY_KIND, scheduledSlotsOn, buildAgenda, freeSlots, freeCapacity, dayVacancies, scheduleGaps, sessionTimeRange };
 })();
 modules["domain/signals.js"] = (() => {
 const { isLateNotice } = modules["domain/billing-policy.js"];
@@ -4061,18 +4130,74 @@ async function startCloud(app) {
 
 return { isCloudBuild, EMPTY_CLOUD, lockScreenOf, isLocked, renderLockScreen, cloudCard, startCloud };
 })();
+modules["ui/work-hours.js"] = (() => {
+const { isTime, minutesOf, WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { field } = modules["ui/components.js"];
+const { h } = modules["ui/dom.js"];
+/**
+ * The working-hours inputs (agenda, free slots and the session timer's length), shared by the
+ * settings page and the main screen. `values` fills them: the settings, or what is being typed.
+ * `onInput` receives what is typed, so a re-render can put it back.
+ */
+function workHoursInputs(values, { onInput = null } = {}) {
+  const changed = () => onInput?.(typed());
+  const input = (name, props) => h('input', { class: 'input', value: values[name] ?? '', dataset: { focusKey: `expediente|${name}` }, onInput: changed, ...props });
+  const inputs = {
+    workStart: input('workStart', { type: 'time' }),
+    workEnd: input('workEnd', { type: 'time' }),
+    breakStart: input('breakStart', { type: 'time' }),
+    breakEnd: input('breakEnd', { type: 'time' }),
+    sessionMinutes: input('sessionMinutes', { type: 'number', min: '10', max: '240', step: '5' }),
+  };
+  const days = WEEKDAY_NAMES.map((name, index) => ({ index, name, input: h('input', { type: 'checkbox', checked: values.workDays.includes(index), onChange: changed }) }));
+
+  function typed() {
+    return {
+      ...Object.fromEntries(Object.entries(inputs).map(([name, element]) => [name, element.value])),
+      workDays: days.filter((day) => day.input.checked).map((day) => day.index),
+    };
+  }
+
+  /** The values to save, or the first problem found. */
+  function read() {
+    const values = typed();
+    const minutes = Number(values.sessionMinutes);
+    const hasBreak = values.breakStart || values.breakEnd;
+    const errors = [
+      (!isTime(values.workStart) || !isTime(values.workEnd) || minutesOf(values.workEnd) <= minutesOf(values.workStart)) && 'Expediente: o fim deve ser depois do início.',
+      hasBreak && (!isTime(values.breakStart) || !isTime(values.breakEnd) || minutesOf(values.breakEnd) <= minutesOf(values.breakStart)) && 'Intervalo: informe início e fim, com o fim depois do início.',
+      (!Number.isInteger(minutes) || minutes < 10) && 'Duração da sessão: mínimo de 10 minutos.',
+      !values.workDays.length && 'Dias de atendimento: marque pelo menos um.',
+    ].filter(Boolean);
+    return {
+      errors,
+      values: { ...values, breakStart: hasBreak ? values.breakStart : '', breakEnd: hasBreak ? values.breakEnd : '', sessionMinutes: minutes },
+    };
+  }
+
+  const rows = [
+    h('div', { class: 'form-grid' }, field('Início do expediente', inputs.workStart), field('Fim do expediente', inputs.workEnd), field('Duração da sessão (min)', inputs.sessionMinutes)),
+    h('div', { class: 'form-grid' }, field('Intervalo: início', inputs.breakStart, 'Opcional (ex.: almoço).'), field('Intervalo: fim', inputs.breakEnd)),
+    h('div', { class: 'field' }, h('span', { class: 'field__label' }, 'Dias de atendimento'), h('div', { class: 'page-actions' }, days.map((day) => h('label', { class: 'check' }, day.input, h('span', {}, day.name.slice(0, 3)))))),
+  ];
+  return { rows, read };
+}
+
+return { workHoursInputs };
+})();
 modules["ui/views/data.js"] = (() => {
 const { saveSettings } = modules["domain/mutations.js"];
 const { importWorkbookFile } = modules["infra/excel-import.js"];
 const { BACKUP_STATE } = modules["infra/file-backup.js"];
 const { downloadJson } = modules["infra/storage.js"];
-const { formatDate, isIsoDate, isTime, minutesOf, WEEKDAY_NAMES, yearOf } = modules["lib/dates.js"];
+const { formatDate, isIsoDate, yearOf } = modules["lib/dates.js"];
 const { button, card, field, pageHeader, signalLabel, table, toast } = modules["ui/components.js"];
 const { LED_MOTION, readLedMotion, saveLedMotion, systemReducesMotion } = modules["ui/appearance.js"];
 const { backupSnapshot, backupStatusLine, reconnectBackup } = modules["ui/backup-status.js"];
 const { formatInteger, formatMoney, h } = modules["ui/dom.js"];
 const { cloudCard } = modules["ui/cloud-session.js"];
 const { backupRestoreInput, confirmReplace, datasetSummary } = modules["ui/replace-data.js"];
+const { workHoursInputs } = modules["ui/work-hours.js"];
 const showDate = (value) => (isIsoDate(value) ? formatDate(value) : `"${value}"`);
 
 function importCard(app) {
@@ -4244,13 +4369,8 @@ function settingsCard(app) {
     professionalName: text(settings.professionalName, { maxlength: '120' }),
     crp: text(settings.crp, { maxlength: '20', placeholder: '00/00000' }),
     hours: text(settings.chargeAbsenceNoticeHours, { type: 'number', min: '0', max: '168', step: '1' }),
-    workStart: text(settings.workStart, { type: 'time' }),
-    workEnd: text(settings.workEnd, { type: 'time' }),
-    breakStart: text(settings.breakStart, { type: 'time' }),
-    breakEnd: text(settings.breakEnd, { type: 'time' }),
-    sessionMinutes: text(settings.sessionMinutes, { type: 'number', min: '10', max: '240', step: '5' }),
   };
-  const workDays = WEEKDAY_NAMES.map((name, index) => ({ index, input: h('input', { type: 'checkbox', checked: settings.workDays.includes(index) }), name }));
+  const workHours = workHoursInputs(settings);
   const form = h(
     'form',
     {
@@ -4258,26 +4378,16 @@ function settingsCard(app) {
       onSubmit: (event) => {
         event.preventDefault();
         const hours = Number(inputs.hours.value);
-        const minutes = Number(inputs.sessionMinutes.value);
-        const hasBreak = inputs.breakStart.value || inputs.breakEnd.value;
-        const errors = [
-          (!Number.isInteger(hours) || hours < 0) && 'Horas da política: use um número inteiro.',
-          (!isTime(inputs.workStart.value) || !isTime(inputs.workEnd.value) || minutesOf(inputs.workEnd.value) <= minutesOf(inputs.workStart.value)) && 'Expediente: o fim deve ser depois do início.',
-          hasBreak && (!isTime(inputs.breakStart.value) || !isTime(inputs.breakEnd.value) || minutesOf(inputs.breakEnd.value) <= minutesOf(inputs.breakStart.value)) && 'Intervalo: informe início e fim, com o fim depois do início.',
-          (!Number.isInteger(minutes) || minutes < 10) && 'Duração da sessão: mínimo de 10 minutos.',
-        ].filter(Boolean);
-        if (errors.length) return toast(errors[0], 'danger');
+        const { errors, values } = workHours.read();
+        const error = !Number.isInteger(hours) || hours < 0 ? 'Horas da política: use um número inteiro.' : errors[0];
+        if (error) return toast(error, 'danger');
         app.commit(
           saveSettings(app.dataset, {
             professionalName: inputs.professionalName.value.trim(),
             crp: inputs.crp.value.trim(),
             chargeAbsenceNoticeHours: hours,
-            workStart: inputs.workStart.value,
-            workEnd: inputs.workEnd.value,
-            breakStart: hasBreak ? inputs.breakStart.value : '',
-            breakEnd: hasBreak ? inputs.breakEnd.value : '',
-            sessionMinutes: minutes,
-            workDays: workDays.filter((day) => day.input.checked).map((day) => day.index),
+            ...values,
+            workHoursConfirmed: true,
           }),
         );
         toast('Configurações salvas.');
@@ -4289,9 +4399,7 @@ function settingsCard(app) {
       inputs.hours,
       'Não há regra do CFP com prazo fixo: o prazo vale o que estiver no contrato terapêutico combinado com o paciente (24 h é o mais comum). Faltas sem aviso são sugeridas como cobradas.',
     ),
-    h('div', { class: 'form-grid' }, field('Início do expediente', inputs.workStart), field('Fim do expediente', inputs.workEnd), field('Duração da sessão (min)', inputs.sessionMinutes)),
-    h('div', { class: 'form-grid' }, field('Intervalo: início', inputs.breakStart, 'Opcional (ex.: almoço).'), field('Intervalo: fim', inputs.breakEnd)),
-    h('div', { class: 'field' }, h('span', { class: 'field__label' }, 'Dias de atendimento'), h('div', { class: 'page-actions' }, workDays.map((day) => h('label', { class: 'check' }, day.input, h('span', {}, day.name.slice(0, 3)))))),
+    workHours.rows,
     h('div', { class: 'form-actions' }, h('span', { class: 'spacer' }), button('Salvar', { type: 'submit' })),
   );
   return card({}, h('h3', { class: 'card-title' }, 'Consultório, expediente e política de faltas'), form);
@@ -5423,7 +5531,7 @@ const focusKey = (entry, field) => `${entry.patientId}|${entry.date}|${field}`;
 return { applyEntryChange, updateEntry, markEntry, focusKey };
 })();
 modules["ui/agenda-calendar.js"] = (() => {
-const { buildAgenda, freeCapacity, freeSlots, sessionTimeRange } = modules["domain/schedule.js"];
+const { buildAgenda, dayVacancies, sessionTimeRange } = modules["domain/schedule.js"];
 const { DATE_KIND, DATE_KIND_LABELS, datesOn } = modules["domain/calendar-dates.js"];
 const { attendanceSignal, daySignal, paymentSignal } = modules["domain/signals.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
@@ -5494,6 +5602,17 @@ function freeSlotsText(slots) {
   return slots.map((slot) => `Vago ${slot.start}–${slot.end} (${slot.capacity} ${slot.capacity === 1 ? 'encaixe' : 'encaixes'})`);
 }
 
+const untimedText = (untimed) => `${untimed} ${untimed === 1 ? 'atendimento sem horário ocupa' : 'atendimentos sem horário ocupam'} parte destes intervalos`;
+const vacanciesText = (capacity) => `${capacity} ${capacity === 1 ? 'vaga' : 'vagas'}`;
+
+/** Vacancies from today on; today's count from now (rounded up to 5 min), not from the start of the day. */
+function vacanciesOn(app, date, entries) {
+  if (date < app.today) return null;
+  const now = new Date();
+  const fromMinutes = date === app.today ? Math.ceil((now.getHours() * 60 + now.getMinutes()) / 5) * 5 : 0;
+  return dayVacancies(date, entries, app.dataset.settings, fromMinutes);
+}
+
 /** Overlay with the day's appointments, quick attendance actions and free slots for "encaixes". */
 function openDayPanel(app, date) {
   openDialog(formatDateLong(date), () => dayContent(app, date), { wide: true });
@@ -5511,7 +5630,8 @@ function dayContent(app, date) {
 
 function dayBody(app, date, entries, rerender) {
   const { settings } = app.dataset;
-  const slots = date >= app.today ? freeSlots(date, entries, settings) : [];
+  const vacancies = vacanciesOn(app, date, entries);
+  const slots = vacancies?.slots ?? [];
   const act = (entry, status, message) => {
     markEntry(app, entry, status, message);
     rerender();
@@ -5534,7 +5654,10 @@ function dayBody(app, date, entries, rerender) {
       date < app.today
         ? h('p', { class: 'muted' }, 'Dia já passou.')
         : slots.length
-          ? h('ul', {}, freeSlotsText(slots).map((text) => h('li', {}, text)))
+          ? [
+              h('ul', {}, freeSlotsText(slots).map((text) => h('li', {}, text))),
+              vacancies.untimed ? h('p', { class: 'gaps__note' }, `${untimedText(vacancies.untimed)}: sobram ${vacanciesText(vacancies.capacity)}.`) : null,
+            ]
           : h('p', { class: 'muted' }, settings.workDays.includes(weekdayIndex(date)) ? 'Nenhum intervalo livre para uma sessão.' : 'Dia sem expediente.'),
     ),
     entries.length
@@ -5593,7 +5716,7 @@ function monthGrid(app) {
       { class: 'days-grid', role: 'grid', 'aria-label': 'Grade do mês' },
       days.map((date) => {
         const dayEntries = byDate.get(date) ?? [];
-        const capacity = date >= app.today ? freeCapacity(freeSlots(date, dayEntries, settings)) : 0;
+        const capacity = vacanciesOn(app, date, dayEntries)?.capacity ?? 0;
         const dates = dayDates(app, date);
         const isHoliday = dates.some((item) => item.kind === DATE_KIND.HOLIDAY);
         const classes = ['day-cell', monthOf(date) !== month ? 'other-month' : '', date === app.today ? 'today' : '', isHoliday ? 'holiday' : ''].filter(Boolean).join(' ');
@@ -5618,7 +5741,7 @@ function monthGrid(app) {
             h('span', { class: 'day-entry' }, signalDots(attendanceSignal(entry, settings, app.today)), h('span', {}, [sessionTimeRange(entry.time, settings), firstName(app, entry)].filter(Boolean).join(' '))),
           ),
           dayEntries.length > MAX_ENTRIES_IN_CELL ? h('span', { class: 'day-more' }, `+${dayEntries.length - MAX_ENTRIES_IN_CELL}`) : null,
-          capacity ? h('span', { class: 'day-free' }, `${capacity} ${capacity === 1 ? 'vaga' : 'vagas'}`) : null,
+          capacity ? h('span', { class: 'day-free' }, vacanciesText(capacity)) : null,
         );
       }),
     ),
@@ -5634,7 +5757,7 @@ function weekColumns(app, entries) {
     { class: 'week-grid' },
     eachDay(from, to).map((date) => {
       const dayEntries = byDate.get(date) ?? [];
-      const slots = date >= app.today ? freeSlots(date, dayEntries, settings) : [];
+      const { slots, untimed } = vacanciesOn(app, date, dayEntries) ?? { slots: [], untimed: 0 };
       const signal = daySignalOf(app, dayEntries);
       return h(
         'div',
@@ -5655,7 +5778,14 @@ function weekColumns(app, entries) {
             h('span', {}, firstName(app, entry)),
           ),
         ),
-        slots.length ? h('ul', { class: 'free-list' }, slots.map((slot) => h('li', {}, `Vago ${slot.start}–${slot.end} · ${slot.capacity}`))) : null,
+        slots.length
+          ? h(
+              'ul',
+              { class: 'free-list' },
+              slots.map((slot) => h('li', {}, `Vago ${slot.start}–${slot.end} · ${slot.capacity}`)),
+              untimed ? h('li', { class: 'free-list__note' }, `− ${untimed} sem horário`) : null,
+            )
+          : null,
       );
     }),
   );
@@ -5663,18 +5793,17 @@ function weekColumns(app, entries) {
 
 function rangeSummary(app, entries) {
   const { from, to } = agendaRange(app.ui);
-  const { settings } = app.dataset;
   const byDate = entriesByDate(entries);
   const freeDays = eachDay(from < app.today ? app.today : from, to)
-    .map((date) => ({ date, slots: freeSlots(date, byDate.get(date) ?? [], settings) }))
-    .filter((day) => day.slots.length);
-  const total = freeDays.reduce((sum, day) => sum + freeCapacity(day.slots), 0);
+    .map((date) => ({ date, ...vacanciesOn(app, date, byDate.get(date) ?? []) }))
+    .filter((day) => day.capacity);
+  const total = freeDays.reduce((sum, day) => sum + day.capacity, 0);
   return h(
     'div',
     { class: 'gaps' },
     h('strong', {}, `Vagas para encaixe no período: ${total}`),
     freeDays.length
-      ? h('ul', {}, freeDays.slice(0, 31).map((day) => h('li', {}, h('button', { type: 'button', class: 'link', onClick: () => openDayPanel(app, day.date) }, formatDate(day.date)), ` · ${freeSlotsText(day.slots).join(' · ')}`)))
+      ? h('ul', {}, freeDays.slice(0, 31).map((day) => h('li', {}, h('button', { type: 'button', class: 'link', onClick: () => openDayPanel(app, day.date) }, formatDate(day.date)), ` · ${freeSlotsText(day.slots).join(' · ')}${day.untimed ? ` · ${untimedText(day.untimed)}: sobram ${vacanciesText(day.capacity)}` : ''}`)))
       : h('p', { class: 'muted' }, 'Sem vagas a partir de hoje neste período.'),
   );
 }
@@ -5724,6 +5853,100 @@ function agendaCalendar(app, entries) {
 }
 
 return { AGENDA_MODES, agendaRange, rangeLabel, openDayPanel, agendaCalendar };
+})();
+modules["ui/agenda-setup.js"] = (() => {
+const { savePatient, saveSettings } = modules["domain/mutations.js"];
+const { FREQUENCY_LABELS } = modules["domain/patients.js"];
+const { scheduleGaps } = modules["domain/schedule.js"];
+const { isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { button, card, select, toast } = modules["ui/components.js"];
+const { h } = modules["ui/dom.js"];
+const { workHoursInputs } = modules["ui/work-hours.js"];
+const REGULAR_FREQUENCIES = Object.entries(FREQUENCY_LABELS).filter(([value]) => value !== 'avulsa');
+const WEEKDAYS = WEEKDAY_NAMES.map((name, index) => [String(index), name]);
+const WORK_HOURS_DRAFT = 'expediente';
+
+// What is typed in the card survives the re-render that saving another line causes.
+const drafts = new Map();
+
+function gapHint(patient, slot) {
+  if (!slot) return 'sem dia fixo cadastrado';
+  return patient.scheduleInferred ? 'dia sugerido pelo histórico' : 'falta o horário';
+}
+
+function gapRow(app, { patient, index }) {
+  const key = `${patient.id}|${index}`;
+  const slot = patient.schedule?.[index];
+  const draft = drafts.get(key) ?? { weekday: String(slot?.weekday ?? 1), time: '', frequency: patient.frequency };
+  const remember = () => drafts.set(key, { weekday: weekday.value, time: time.value, frequency: frequency.value });
+  const weekday = select(WEEKDAYS, { value: draft.weekday, ariaLabel: `Dia de ${patient.name}`, dataset: { focusKey: `${key}|dia` }, onChange: remember });
+  const time = h('input', { class: 'input', type: 'time', value: draft.time, 'aria-label': `Horário de ${patient.name}`, dataset: { focusKey: `${key}|hora` }, onInput: remember });
+  const frequency = select(REGULAR_FREQUENCIES, { value: draft.frequency, ariaLabel: `Frequência de ${patient.name}`, dataset: { focusKey: `${key}|frequencia` }, onChange: remember });
+
+  const save = () => {
+    if (!isTime(time.value)) return toast(`Informe o horário de ${patient.name}.`, 'danger');
+    const next = { weekday: Number(weekday.value), time: time.value };
+    const schedule = index < 0 ? [next] : patient.schedule.map((item, position) => (position === index ? next : item));
+    drafts.delete(key);
+    app.commit(savePatient(app.dataset, { ...patient, schedule, frequency: frequency.value, scheduleInferred: false }));
+    toast(`${patient.name}: ${WEEKDAY_NAMES[next.weekday].toLowerCase()}, ${next.time}.`);
+  };
+  const noFixedDay = () => {
+    if (!confirm(`${patient.name} não tem dia e horário fixos?\n\nA agenda deixa de prever sessões para essa pessoa. Dá para mudar depois em Pacientes.`)) return;
+    const schedule = index < 0 ? [] : patient.schedule.filter((_, position) => position !== index);
+    drafts.delete(key);
+    app.commit(savePatient(app.dataset, { ...patient, schedule, frequency: schedule.length ? patient.frequency : 'avulsa', scheduleInferred: false }));
+  };
+
+  return h(
+    'li',
+    { class: 'setup-row' },
+    h('span', { class: 'setup-row__name' }, patient.name, h('span', { class: 'setup-row__hint' }, gapHint(patient, slot))),
+    h('label', { class: 'setup-row__field' }, h('span', {}, 'Dia'), weekday),
+    h('label', { class: 'setup-row__field' }, h('span', {}, 'Horário'), time),
+    h('label', { class: 'setup-row__field' }, h('span', {}, 'Frequência'), frequency),
+    h('span', { class: 'setup-row__actions' }, button('Salvar', { onClick: save }), button('Não tem dia fixo', { variant: 'ghost', onClick: noFixedDay })),
+  );
+}
+
+function workHoursBlock(app) {
+  const workHours = workHoursInputs(drafts.get(WORK_HOURS_DRAFT) ?? app.dataset.settings, { onInput: (values) => drafts.set(WORK_HOURS_DRAFT, values) });
+  const confirmHours = () => {
+    const { errors, values } = workHours.read();
+    if (errors.length) return toast(errors[0], 'danger');
+    drafts.delete(WORK_HOURS_DRAFT);
+    app.commit(saveSettings(app.dataset, { ...values, workHoursConfirmed: true }));
+    toast('Expediente confirmado.');
+  };
+  return h(
+    'div',
+    { class: 'setup-block' },
+    h('h4', { class: 'setup-block__title' }, 'Seu expediente'),
+    h('p', { class: 'muted' }, 'Confira os horários de atendimento e a duração da sessão: a agenda calcula as vagas com eles, e o cronômetro avisa quando a sessão chega a essa duração.'),
+    workHours.rows,
+    h('div', { class: 'form-actions' }, button('Está certo, salvar', { onClick: confirmHours })),
+  );
+}
+
+/**
+ * Main-screen card that asks, in place, what the agenda needs to show the right free slots: the
+ * time of each active patient's weekly session and the working hours. Each item leaves the card
+ * once saved, and the card goes away when nothing is missing.
+ */
+function agendaSetupCard(app) {
+  const gaps = scheduleGaps(app.dataset.patients, app.indexes.activeIds);
+  const needsHours = !app.dataset.settings.workHoursConfirmed;
+  if (!gaps.length && !needsHours) return null;
+  return card(
+    { class: 'setup-card' },
+    h('h3', { class: 'card-title' }, 'Para a agenda mostrar os horários livres certos'),
+    h('p', {}, 'Preencha uma vez só. Cada item sai daqui assim que é salvo.'),
+    gaps.length ? [h('h4', { class: 'setup-block__title' }, 'Dia e horário de cada paciente'), h('ul', { class: 'setup-list' }, gaps.map((gap) => gapRow(app, gap)))] : null,
+    needsHours ? workHoursBlock(app) : null,
+  );
+}
+
+return { agendaSetupCard };
 })();
 modules["ui/appointments-table.js"] = (() => {
 const { attendanceSignal, paymentSignal } = modules["domain/signals.js"];
@@ -6063,6 +6286,7 @@ return { nextAppointment, patientsTable };
 modules["ui/views/hub.js"] = (() => {
 const { buildAgenda } = modules["domain/schedule.js"];
 const { agendaCalendar, agendaRange, rangeLabel } = modules["ui/agenda-calendar.js"];
+const { agendaSetupCard } = modules["ui/agenda-setup.js"];
 const { appointmentsTable } = modules["ui/appointments-table.js"];
 const { button, card, sectionTitle } = modules["ui/components.js"];
 const { formatMoney, h } = modules["ui/dom.js"];
@@ -6085,6 +6309,7 @@ function renderHub(app) {
           h('button', { type: 'button', class: 'link', onClick: () => app.setUi({ view: 'financeiro' }) }, 'Decidir agora'),
         )
       : null,
+    agendaSetupCard(app),
     agendaCalendar(app, entries),
     card(
       {},
@@ -7015,6 +7240,322 @@ function registerOfflineCache() {
 
 return { registerOfflineCache };
 })();
+modules["domain/session-timer.js"] = (() => {
+const { minutesOf } = modules["lib/dates.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+// The session timer: it starts when the psychologist says so, shows how long the session has run,
+// warns once at its nominal length and keeps counting until she stops it. It never starts by itself
+// and cannot be set back: it counts from the moment she started it.
+
+const MS_PER_MINUTE = 60_000;
+
+/** Identifies an agenda appointment across re-renders and reloads. */
+const appointmentKey = (entry) => `${entry.date}|${entry.patientId}|${entry.time ?? ''}`;
+
+/** An appointment that can still take place: not yet attended, missed or cancelled. */
+const isOpenAppointment = (entry) => !entry.session || entry.session.status === ATTENDANCE.SCHEDULED;
+
+/**
+ * The appointment to ask about now: today's, open, with a time that has come and a nominal length
+ * that has not run out yet, and not asked about before. Entries come sorted by time.
+ */
+function dueAppointment(entries, { today, nowMinutes, sessionMinutes, asked }) {
+  return (
+    entries.find((entry) => {
+      if (entry.date !== today || !entry.time || !isOpenAppointment(entry) || asked.has(appointmentKey(entry))) return false;
+      const start = minutesOf(entry.time);
+      return nowMinutes >= start && nowMinutes < start + sessionMinutes;
+    }) ?? null
+  );
+}
+
+/** Today's open appointments that can still begin: without a time, or before their end. */
+function upcomingAppointments(entries, { today, nowMinutes, sessionMinutes }) {
+  return entries.filter((entry) => entry.date === today && isOpenAppointment(entry) && (!entry.time || nowMinutes < minutesOf(entry.time) + sessionMinutes));
+}
+
+function startTimer(entry, now, sessionMinutes) {
+  return { key: appointmentKey(entry), patientId: entry.patientId, date: entry.date, time: entry.time ?? '', startedAt: now, minutes: sessionMinutes, endNoticeShown: false };
+}
+
+const elapsedMs = (timer, now) => Math.max(0, now - timer.startedAt);
+
+const isOvertime = (timer, now) => elapsedMs(timer, now) >= timer.minutes * MS_PER_MINUTE;
+
+/** Whole minutes past the nominal length (0 before it). */
+const overtimeMinutes = (timer, now) => Math.max(0, Math.floor((elapsedMs(timer, now) - timer.minutes * MS_PER_MINUTE) / MS_PER_MINUTE));
+
+/** "05:07", or "1:02:07" from one hour on. */
+function formatElapsed(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return hours ? `${hours}:${minutes}:${seconds}` : `${minutes}:${seconds}`;
+}
+
+/** "56 min" or "1 h 05 min", for messages. */
+function formatDuration(ms) {
+  const totalMinutes = Math.floor(ms / MS_PER_MINUTE);
+  const hours = Math.floor(totalMinutes / 60);
+  return hours ? `${hours} h ${String(totalMinutes % 60).padStart(2, '0')} min` : `${totalMinutes} min`;
+}
+
+return { appointmentKey, isOpenAppointment, dueAppointment, upcomingAppointments, startTimer, elapsedMs, isOvertime, overtimeMinutes, formatElapsed, formatDuration };
+})();
+modules["ui/session-timer.js"] = (() => {
+const { buildAgenda } = modules["domain/schedule.js"];
+const { appointmentKey, dueAppointment, elapsedMs, formatDuration, formatElapsed, isOpenAppointment, isOvertime, overtimeMinutes, startTimer, upcomingAppointments } = modules["domain/session-timer.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+const { todayIso } = modules["lib/dates.js"];
+const { isLocked } = modules["ui/cloud-session.js"];
+const { openDialog, signalDots, toast } = modules["ui/components.js"];
+const { h, replaceChildren } = modules["ui/dom.js"];
+const { markEntry } = modules["ui/entry-actions.js"];
+// Per device: the running timer and the appointments already asked about today. A reload, a closed
+// tab or a sleeping computer does not lose the count, which is always "now − start".
+const TIMER_KEY = 'controle-clinico/sessao-ativa';
+const ASKED_KEY = 'controle-clinico/sessoes-perguntadas';
+const TICK_MS = 1000;
+const MAX_UPCOMING = 4;
+const PAGE_TITLE = document.title;
+
+function readJson(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(key, value) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Without storage the timer only lasts for this visit.
+  }
+}
+
+const isTimer = (value) => typeof value?.key === 'string' && Number.isFinite(value.startedAt) && Number.isFinite(value.minutes);
+const readTimer = () => (isTimer(readJson(TIMER_KEY)) ? readJson(TIMER_KEY) : null);
+
+function readAsked() {
+  const stored = readJson(ASKED_KEY);
+  return { date: stored?.date ?? '', keys: new Set(Array.isArray(stored?.keys) ? stored.keys : []) };
+}
+
+const minutesNow = (now) => now.getHours() * 60 + now.getMinutes();
+const clock = (ms) => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+// The main choice of a prompt takes the focus, so Enter picks it (not the dialog's "Fechar").
+const bigButton = (label, onClick, variant = 'primary') => h('button', { type: 'button', class: `btn btn--${variant} btn--large`, onClick, autofocus: variant === 'primary' }, label);
+
+/**
+ * The session bar above the tabs, on every screen: today's sessions with a button to start each
+ * one, or the running session with its time and a large "Encerrar sessão" button. At a session's
+ * time it asks whether to start counting; at the agreed length it says so, and the count goes on
+ * until she ends the session. Nothing here starts, stops or changes the time by itself.
+ */
+function startSessionTimer(app) {
+  const container = document.getElementById('sessionBar');
+  let timer = readTimer();
+  let asked = readAsked();
+  let prompt = null;
+  let digits = null;
+  let shownOvertime = false;
+  let shownMinute = -1;
+
+  const nameOf = (patientId) => app.indexes.patientsById.get(patientId)?.name ?? 'paciente';
+  const firstNameOf = (patientId) => nameOf(patientId).split(' ')[0];
+  const entriesOf = (date) => buildAgenda(app.dataset, app.indexes, { from: date, to: date }, date);
+  const findEntry = (current) => entriesOf(current.date).find((entry) => appointmentKey(entry) === current.key) ?? null;
+
+  function askedToday(today) {
+    if (asked.date !== today) asked = { date: today, keys: new Set() };
+    return asked.keys;
+  }
+
+  function markAsked(today, key) {
+    askedToday(today).add(key);
+    writeJson(ASKED_KEY, { date: today, keys: [...asked.keys] });
+  }
+
+  function saveTimer(next) {
+    timer = next;
+    writeJson(TIMER_KEY, next);
+  }
+
+  function runningBar(now) {
+    const over = isOvertime(timer, now.getTime());
+    shownOvertime = over;
+    digits = h('span', { class: 'session-bar__digits' }, formatElapsed(elapsedMs(timer, now.getTime())));
+    return h(
+      'div',
+      { class: `session-bar session-bar--running${over ? ' session-bar--overtime' : ''}`, role: 'region', 'aria-label': 'Sessão em andamento' },
+      signalDots({ tone: over ? 'yellow' : 'green' }),
+      h('span', { class: 'session-bar__text' }, 'Sessão de ', h('strong', {}, firstNameOf(timer.patientId)), ` · começou às ${clock(timer.startedAt)}`),
+      digits,
+      h('span', { class: 'session-bar__status' }, over ? `passou dos ${timer.minutes} min · continua contando` : `de ${timer.minutes} min`),
+      h('button', { type: 'button', class: 'btn btn--large session-bar__stop', onClick: askToStop }, 'Encerrar sessão'),
+    );
+  }
+
+  function idleBar(upcoming) {
+    return h(
+      'div',
+      { class: 'session-bar', role: 'region', 'aria-label': 'Sessões de hoje' },
+      h('span', { class: 'session-bar__text' }, 'Sessões de hoje:'),
+      upcoming.map((entry) =>
+        h('button', { type: 'button', class: 'btn session-bar__start', onClick: () => start(entry) }, `Iniciar · ${firstNameOf(entry.patientId)} ${entry.time || '(sem horário)'}`),
+      ),
+    );
+  }
+
+  function render() {
+    digits = null;
+    if (isLocked(app)) return replaceChildren(container);
+    const now = new Date();
+    shownMinute = now.getMinutes();
+    if (timer) return replaceChildren(container, runningBar(now));
+    const today = todayIso(now);
+    const upcoming = upcomingAppointments(entriesOf(today), { today, nowMinutes: minutesNow(now), sessionMinutes: app.dataset.settings.sessionMinutes });
+    replaceChildren(container, upcoming.length ? idleBar(upcoming.slice(0, MAX_UPCOMING)) : null);
+  }
+
+  function start(entry) {
+    if (timer) return toast('Já há uma sessão em andamento. Encerre-a antes de começar outra.', 'danger');
+    saveTimer(startTimer(entry, Date.now(), app.dataset.settings.sessionMinutes));
+    markAsked(entry.date, timer.key);
+    render();
+    toast(`Cronômetro iniciado: sessão de ${nameOf(entry.patientId)}.`);
+  }
+
+  function stop(current, entryToMark) {
+    if (timer?.key !== current.key) return; // already ended in another tab
+    const duration = formatDuration(elapsedMs(current, Date.now()));
+    saveTimer(null);
+    document.title = PAGE_TITLE;
+    render();
+    if (entryToMark) markEntry(app, entryToMark, ATTENDANCE.PRESENT, `Sessão encerrada (${duration}) e marcada como realizada.`);
+    else toast(`Sessão encerrada: ${duration}.`);
+  }
+
+  function showPrompt(title, build) {
+    prompt?.close();
+    const dialog = openDialog(title, build);
+    dialog.classList.add('dialog--prompt');
+    // The close event comes later: by then another prompt may have taken this one's place.
+    dialog.addEventListener('close', () => {
+      if (prompt === dialog) prompt = null;
+    });
+    prompt = dialog;
+  }
+
+  function askToStart(entry) {
+    markAsked(entry.date, appointmentKey(entry));
+    document.title = `Hora da sessão · ${PAGE_TITLE}`;
+    showPrompt('Hora da sessão', (close) => [
+      h('p', { class: 'prompt__text' }, `Sessão de ${nameOf(entry.patientId)} às ${entry.time}.`, h('br'), 'Começar a contar o tempo agora?'),
+      h('p', { class: 'muted' }, `O cronômetro mostra quanto tempo passou e avisa quando chegar a ${app.dataset.settings.sessionMinutes} minutos. Ele só para quando você tocar em “Encerrar sessão”.`),
+      h(
+        'div',
+        { class: 'prompt__actions' },
+        bigButton('Começar agora', () => {
+          close();
+          start(entry);
+        }),
+        bigButton('Agora não', close, 'secondary'),
+      ),
+    ]);
+  }
+
+  function showEndNotice() {
+    const current = timer;
+    document.title = `Tempo da sessão acabou · ${PAGE_TITLE}`;
+    showPrompt('O tempo da sessão acabou', (close) => [
+      h('p', { class: 'prompt__text' }, `Já se passaram ${current.minutes} minutos da sessão de ${nameOf(current.patientId)}.`),
+      h('p', {}, 'O cronômetro continua contando até você tocar em “Encerrar sessão”.'),
+      h(
+        'div',
+        { class: 'prompt__actions' },
+        bigButton('Encerrar sessão', () => {
+          close();
+          askToStop();
+        }),
+        bigButton('Continuar a sessão', close, 'secondary'),
+      ),
+    ]);
+  }
+
+  function askToStop() {
+    if (!timer) return;
+    const current = timer;
+    const entry = findEntry(current);
+    const canMark = Boolean(entry && isOpenAppointment(entry));
+    showPrompt('Encerrar a sessão?', (close) => [
+      h('p', { class: 'prompt__text' }, `Sessão de ${nameOf(current.patientId)}: começou às ${clock(current.startedAt)} e está com ${formatDuration(elapsedMs(current, Date.now()))}.`),
+      h(
+        'div',
+        { class: 'prompt__actions' },
+        canMark
+          ? bigButton('Encerrar e marcar como realizada', () => {
+              close();
+              stop(current, entry);
+            })
+          : null,
+        bigButton(
+          canMark ? 'Só encerrar' : 'Encerrar',
+          () => {
+            close();
+            stop(current, null);
+          },
+          canMark ? 'secondary' : 'primary',
+        ),
+        bigButton('Voltar', close, 'ghost'),
+      ),
+    ]);
+  }
+
+  function tick() {
+    if (isLocked(app)) return;
+    const now = new Date();
+    if (timer) {
+      const over = isOvertime(timer, now.getTime());
+      if (over !== shownOvertime || !digits?.isConnected) render();
+      else digits.textContent = formatElapsed(elapsedMs(timer, now.getTime()));
+      if (over && !timer.endNoticeShown) {
+        saveTimer({ ...timer, endNoticeShown: true });
+        showEndNotice();
+      }
+      if (!prompt) document.title = over ? `Tempo da sessão acabou · ${PAGE_TITLE}` : `${formatElapsed(elapsedMs(timer, now.getTime()))} · ${PAGE_TITLE}`;
+      return;
+    }
+    if (now.getMinutes() !== shownMinute) render();
+    if (prompt) return;
+    document.title = PAGE_TITLE;
+    const today = todayIso(now);
+    const due = dueAppointment(entriesOf(today), { today, nowMinutes: minutesNow(now), sessionMinutes: app.dataset.settings.sessionMinutes, asked: askedToday(today) });
+    if (due) askToStart(due);
+  }
+
+  // Another tab of this browser started or ended a session.
+  window.addEventListener('storage', (event) => {
+    if (event.key === TIMER_KEY) {
+      timer = readTimer();
+      render();
+    }
+    if (event.key === ASKED_KEY) asked = readAsked();
+  });
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && tick());
+  app.subscribe(render);
+  render();
+  setInterval(tick, TICK_MS);
+  tick();
+}
+
+return { startSessionTimer };
+})();
 modules["main.js"] = (() => {
 const { createApp } = modules["app.js"];
 const { migrateDataset } = modules["domain/migrations.js"];
@@ -7036,6 +7577,7 @@ const { applyLedMotion } = modules["ui/appearance.js"];
 const { createSidePanel } = modules["ui/side-panel.js"];
 const { registerOfflineCache } = modules["infra/offline-cache.js"];
 const { isCloudBuild, isLocked, renderLockScreen, startCloud } = modules["ui/cloud-session.js"];
+const { startSessionTimer } = modules["ui/session-timer.js"];
 const VIEWS = [
   { id: 'painel', label: 'Painel geral', render: renderHub },
   { id: 'pacientes', label: 'Pacientes', render: renderPatients },
@@ -7218,6 +7760,7 @@ function start() {
   };
   app.subscribe(render);
   render();
+  startSessionTimer(app);
 }
 
 start();
