@@ -431,6 +431,8 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .choice { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--dialog-bg); cursor: pointer; font-size: 1rem; }
 .choice:has(input:checked) { border-color: var(--accent); background: var(--today-bg); font-weight: 600; }
 .choice input { width: 1.3rem; height: 1.3rem; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+.days-box { display: flex; flex-direction: column; gap: 10px; }
+.days-box[hidden], .field[hidden] { display: none; }
 .repeat-hint { font-size: 0.95rem; color: var(--text); background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 14px; }
 .form-errors { background: var(--danger-soft); color: var(--danger); padding: 10px 14px; border-radius: var(--radius-sm); font-weight: 500; }
 .dialog { width: min(44rem, calc(100vw - 2rem)); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; background: var(--dialog-bg); color: var(--text); box-shadow: 0 20px 50px rgb(0 0 0 / 0.3); }
@@ -919,16 +921,11 @@ function withWeeklyCount(schedule, count, workDays) {
 }
 
 /**
- * The patient after "repeats" was chosen when scheduling on `date` at `time`: that weekday becomes
- * (or updates) a fixed day, and `frequency` applies to all of them. Every 15 days or once a month
- * count from `date`; weekly keeps an earlier start.
+ * The patient after scheduling with a repetition: the chosen days and times become the patient's
+ * fixed days (replacing the previous ones), with `frequency` for all of them, from `from` on.
  */
-function withFixedDay(patient, { date, time, frequency }) {
-  const weekday = weekdayIndex(date);
-  const existing = patient.schedule.findIndex((slot) => slot.weekday === weekday);
-  const schedule = existing >= 0 ? patient.schedule.map((slot, index) => (index === existing ? { weekday, time } : slot)) : [...patient.schedule, { weekday, time }];
-  const restart = frequency !== 'semanal' || !patient.scheduleStart || patient.scheduleStart > date;
-  return { ...patient, schedule, frequency, scheduleInferred: false, scheduleStart: restart ? date : patient.scheduleStart };
+function withFixedDays(patient, { days, from, frequency }) {
+  return { ...patient, schedule: days.map(({ weekday, time }) => ({ weekday, time })), frequency, scheduleInferred: false, scheduleStart: from };
 }
 
 function isActivePatient(patient, lastSessionDate, today) {
@@ -972,7 +969,7 @@ function newPatient(fields) {
   };
 }
 
-return { PATIENT_STATUS, FREQUENCY_LABELS, WEEKLY_COUNT_PERIOD, MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount, withFixedDay, isActivePatient, inferUsualWeekday, newPatient };
+return { PATIENT_STATUS, FREQUENCY_LABELS, WEEKLY_COUNT_PERIOD, MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount, withFixedDays, isActivePatient, inferUsualWeekday, newPatient };
 })();
 modules["domain/metrics.js"] = (() => {
 const { monthOf, yearOf } = modules["lib/dates.js"];
@@ -4656,15 +4653,54 @@ function renderSettings(app) {
 
 return { renderImport, renderSettings };
 })();
+modules["ui/weekly-count.js"] = (() => {
+const { MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount } = modules["domain/patients.js"];
+const { WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { h } = modules["ui/dom.js"];
+const slotText = (slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()}${slot.time ? ` às ${slot.time}` : ''}`;
+
+/** Asks before dropping fixed days that already have a time; true when it may go ahead. */
+function confirmDroppedSlots(patient, dropped) {
+  const timed = dropped.filter((slot) => slot.time);
+  return !timed.length || confirm(`Tirar ${timed.map(slotText).join(' e ')} dos dias fixos de ${patient.name}?`);
+}
+
+/** The "− 2 vezes por semana +" buttons; `setCount(next)` decides what changes. */
+function countStepper(count, frequency, setCount) {
+  return h(
+    'div',
+    { class: 'week-count' },
+    h('button', { type: 'button', class: 'week-count__step', 'aria-label': 'Uma vez a menos', disabled: count <= 1, onClick: () => setCount(count - 1) }, '−'),
+    h('span', { class: 'week-count__value' }, weeklyCountText(count, frequency)),
+    h('button', { type: 'button', class: 'week-count__step', 'aria-label': 'Uma vez a mais', disabled: count >= MAX_WEEKLY_SESSIONS, onClick: () => setCount(count + 1) }, '+'),
+  );
+}
+
+/**
+ * How many sessions the patient has in the week. Each one is a fixed day with its own time; "+"
+ * adds a day (the first free working day, time to be filled in), "−" drops the last.
+ * `save(schedule)` stores the new list.
+ */
+function weeklyCountControl(app, patient, save) {
+  const setCount = (next) => {
+    if (!confirmDroppedSlots(patient, patient.schedule.slice(Math.max(0, next)))) return;
+    save(withWeeklyCount(patient.schedule, next, app.dataset.settings.workDays));
+  };
+  return countStepper(patient.schedule.length, patient.frequency, setCount);
+}
+
+return { confirmDroppedSlots, countStepper, weeklyCountControl };
+})();
 modules["ui/forms.js"] = (() => {
 const { noticeHoursBefore, suggestedFee } = modules["domain/billing-policy.js"];
 const { deletePayment, deleteSession, newPayment, newSession, registerPayment, savePatient, saveSession } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText, withFixedDay } = modules["domain/patients.js"];
+const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText, withFixedDays, withWeeklyCount } = modules["domain/patients.js"];
 const { ATTENDANCE, ATTENDANCE_LABELS, NOTICE_LABELS, PUNCTUALITY, PUNCTUALITY_LABELS } = modules["domain/status.js"];
 const { scheduledSlotsOn } = modules["domain/schedule.js"];
 const { formatDate, formatMonth, isIsoDate, isTime, monthOf, WEEKDAY_NAMES, weekdayIndex } = modules["lib/dates.js"];
 const { button, field, openDialog, select, toast } = modules["ui/components.js"];
-const { formatMoney, h, parseMoneyInput } = modules["ui/dom.js"];
+const { formatMoney, h, parseMoneyInput, replaceChildren } = modules["ui/dom.js"];
+const { countStepper } = modules["ui/weekly-count.js"];
 const { describeCell } = modules["lib/text.js"];
 const optionsOf = (labels, emptyLabel = null) => [...(emptyLabel ? [['', emptyLabel]] : []), ...Object.entries(labels)];
 
@@ -4676,9 +4712,9 @@ const patientOptions = (app) =>
 // "Repete?" when scheduling: large choices instead of a dropdown (harder for older hands, NN/g).
 const REPEAT_OPTIONS = [
   ['', 'Só esta vez (encaixe)', ''],
-  ['semanal', 'Toda semana, neste dia e horário', 'toda semana'],
-  ['quinzenal', 'A cada 15 dias, neste dia e horário', 'a cada 15 dias'],
-  ['mensal', 'Uma vez por mês, neste dia e horário', 'uma vez por mês'],
+  ['semanal', 'Toda semana', 'toda semana'],
+  ['quinzenal', 'A cada 15 dias', 'a cada 15 dias'],
+  ['mensal', 'Uma vez por mês', 'uma vez por mês'],
 ];
 
 function repeatChoices(onChange) {
@@ -4690,8 +4726,17 @@ function repeatChoices(onChange) {
   };
 }
 
+const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((name, index) => [String(index), name]);
+
+/** "a", "a e b", "a, b e c". */
+const listText = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} e ${items.at(-1)}` : items.join(''));
+
 const fixedDaysText = (patient) =>
-  patient.schedule.length ? patient.schedule.map((slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()} ${slot.time ? `às ${slot.time}` : '(sem horário)'}`).join(', ') : 'nenhum';
+  patient.schedule.length ? listText(patient.schedule.map((slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()} ${slot.time ? `às ${slot.time}` : '(sem horário)'}`)) : 'nenhum';
+
+// Without a patient chosen yet, the list starts with "Escolha o paciente…": a select with no match
+// looks as if its first patient were chosen, and "Salvar" then says none is.
+const patientChoice = (app, value, props = {}) => select([...(value ? [] : [['', 'Escolha o paciente…']]), ...patientOptions(app)], { value, ...props });
 
 const numberOrNull = (text) => (String(text).trim() === '' ? null : Number(text));
 const moneyText = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
@@ -4717,7 +4762,7 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
     let feeEditedByUser = Boolean(session);
     const form = h('form', { class: 'form', novalidate: true });
     const inputs = {
-      patientId: select(patientOptions(app), { value: current.patientId, name: 'patientId' }),
+      patientId: patientChoice(app, current.patientId, { name: 'patientId' }),
       date: h('input', { class: 'input', type: 'date', required: true, value: current.date }),
       time: h('input', { class: 'input', type: 'time', value: current.time ?? '' }),
       noticeAt: h('input', { class: 'input', type: 'datetime-local', value: current.noticeAt ?? '' }),
@@ -4744,23 +4789,81 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
     );
     const attendanceFields = h('div', { class: 'form-grid' }, field('Pontualidade', inputs.punctuality), field('Atraso (minutos)', inputs.lateMinutes));
     const policyHint = h('span', { class: 'field__hint' });
+    // Scheduling with a repetition: "how many times" and one line (day + time) per time, all alike.
+    let days = null;
+    const dateField = field('Data', inputs.date);
+    const timeField = field('Horário', inputs.time);
+    const daysBox = h('div', { class: 'days-box', hidden: true });
     const repeatHint = h('p', { class: 'repeat-hint' });
+    const dayText = (day) => `${WEEKDAY_NAMES[day.weekday].toLowerCase()} às ${day.time || '(horário?)'}`;
     const showRepeatHint = () => {
       const period = REPEAT_OPTIONS.find(([value]) => value === repeat.value())[2];
-      const patient = app.indexes.patientsById.get(inputs.patientId.value);
-      const weekday = isIsoDate(inputs.date.value) ? WEEKDAY_NAMES[weekdayIndex(inputs.date.value)].toLowerCase() : '';
       if (!period) {
-        repeatHint.textContent = 'Marca só esta data. Para um dia fixo na agenda, escolha uma das outras opções.';
+        repeatHint.textContent = 'Marca só esta data. Para dias fixos na agenda, escolha uma das outras opções.';
         return;
       }
+      const patient = app.indexes.patientsById.get(inputs.patientId.value);
       repeatHint.replaceChildren(
-        h('strong', {}, `Dia fixo: ${weekday} às ${inputs.time.value || '(informe o horário)'}, ${period}${period === 'toda semana' ? '' : `, a partir de ${formatDate(inputs.date.value)}`}.`),
-        h('br'),
-        patient ? `Dias fixos que ${patient.name} já tem: ${fixedDaysText(patient)}. ` : '',
-        'Vem mais de uma vez por semana? Agende também o outro dia, com o horário dele.',
+        h('strong', {}, `Dias fixos: ${listText(days.map(dayText))}, ${period}${isIsoDate(inputs.date.value) ? `, a partir de ${formatDate(inputs.date.value)}` : ''}.`),
+        ...(patient?.schedule.length ? [h('br'), `Substitui os dias fixos atuais de ${patient.name}: ${fixedDaysText(patient)}.`] : []),
       );
     };
-    const repeat = repeatChoices(showRepeatHint);
+    const dayLine = (day, index) =>
+      h(
+        'li',
+        { class: 'setup-slot' },
+        h(
+          'label',
+          { class: 'setup-row__field' },
+          h('span', {}, `${index + 1}ª vez: dia`),
+          select(WEEKDAY_OPTIONS, {
+            value: String(day.weekday),
+            ariaLabel: `Dia da ${index + 1}ª vez`,
+            onChange: (event) => {
+              day.weekday = Number(event.target.value);
+              showRepeatHint();
+            },
+          }),
+        ),
+        h(
+          'label',
+          { class: 'setup-row__field' },
+          h('span', {}, 'Horário'),
+          h('input', {
+            class: `input${day.time ? '' : ' input--missing'}`,
+            type: 'time',
+            value: day.time,
+            'aria-label': `Horário da ${index + 1}ª vez`,
+            onInput: (event) => {
+              day.time = event.target.value;
+              event.target.classList.toggle('input--missing', !event.target.value);
+              showRepeatHint();
+            },
+          }),
+        ),
+      );
+    const renderDays = () => {
+      const setCount = (next) => {
+        days = withWeeklyCount(days, next, app.dataset.settings.workDays);
+        renderDays();
+      };
+      replaceChildren(
+        daysBox,
+        h('div', { class: 'setup-row__field' }, h('span', { class: 'field__label' }, 'Quantas vezes'), countStepper(days.length, repeat.value(), setCount)),
+        h('ul', { class: 'setup-slots' }, days.map(dayLine)),
+      );
+      showRepeatHint();
+    };
+    const onRepeatChange = () => {
+      const repeating = Boolean(repeat.value());
+      if (repeating && !days) days = [{ weekday: isIsoDate(inputs.date.value) ? weekdayIndex(inputs.date.value) : 1, time: inputs.time.value }];
+      dateField.querySelector('.field__label').textContent = repeating ? 'A partir de' : 'Data';
+      timeField.hidden = repeating;
+      daysBox.hidden = !repeating;
+      if (repeating) renderDays();
+      else showRepeatHint();
+    };
+    const repeat = repeatChoices(onRepeatChange);
 
     const readDraft = () => ({
       status: inputs.status.value,
@@ -4807,12 +4910,13 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
         const patient = app.indexes.patientsById.get(inputs.patientId.value);
         const fixedErrors = [
           !patient && 'Escolha o paciente.',
-          !isIsoDate(inputs.date.value) && 'Informe a data.',
-          !isTime(inputs.time.value) && 'Para repetir, informe o horário.',
+          !isIsoDate(inputs.date.value) && 'Informe a partir de quando.',
+          days.some((day) => !isTime(day.time)) && 'Informe o horário de cada vez.',
+          new Set(days.map((day) => day.weekday)).size < days.length && 'Há duas vezes no mesmo dia da semana: escolha dias diferentes.',
         ].filter(Boolean);
         if (!showErrors(form, fixedErrors)) return;
-        app.commit(savePatient(app.dataset, withFixedDay(patient, { date: inputs.date.value, time: inputs.time.value, frequency: repeat.value() })));
-        toast(`Dia fixo de ${patient.name}: ${WEEKDAY_NAMES[weekdayIndex(inputs.date.value)].toLowerCase()} às ${inputs.time.value}.`);
+        app.commit(savePatient(app.dataset, withFixedDays(patient, { days, from: inputs.date.value, frequency: repeat.value() })));
+        toast(`Dias fixos de ${patient.name}: ${listText(days.map(dayText))}.`);
         close();
         return;
       }
@@ -4861,11 +4965,13 @@ function openSessionForm(app, { session = null, patientId = '', date = app.today
         })
       : null;
 
-    const when = [field('Paciente', inputs.patientId), h('div', { class: 'form-grid' }, field('Data', inputs.date), field('Horário', inputs.time))];
+    const when = h('div', { class: 'form-grid' }, dateField, timeField);
+    // Scheduling: who, whether it repeats, then when (one date, or the fixed days).
     const parts = scheduling
-      ? [...when, repeat.element, repeatHint, field('Observação (opcional)', inputs.note), formActions(close)]
+      ? [field('Paciente', inputs.patientId), repeat.element, when, daysBox, repeatHint, field('Observação (opcional)', inputs.note), formActions(close)]
       : [
-          ...when,
+          field('Paciente', inputs.patientId),
+          when,
           field('Situação', inputs.status),
           absenceFields,
           attendanceFields,
@@ -4891,7 +4997,7 @@ function openPaymentForm(app, { patientId = '', month = null, amount = null, ses
   openDialog('Registrar pagamento', (close) => {
     const form = h('form', { class: 'form', novalidate: true });
     const inputs = {
-      patientId: select(patientOptions(app), { value: patientId }),
+      patientId: patientChoice(app, patientId),
       date: h('input', { class: 'input', type: 'date', value: app.today }),
       amount: h('input', { class: 'input', inputmode: 'decimal', value: moneyText(amount), placeholder: '0,00' }),
       bank: h('input', { class: 'input', placeholder: 'Ex.: Pix, Santander, Bradesco', maxlength: '40' }),
@@ -6107,40 +6213,6 @@ function formatDuration(ms) {
 }
 
 return { appointmentKey, isOpenAppointment, dueAppointment, startTimer, elapsedMs, isOvertime, overtimeMinutes, formatElapsed, formatDuration };
-})();
-modules["ui/weekly-count.js"] = (() => {
-const { MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount } = modules["domain/patients.js"];
-const { WEEKDAY_NAMES } = modules["lib/dates.js"];
-const { h } = modules["ui/dom.js"];
-const slotText = (slot) => `${WEEKDAY_NAMES[slot.weekday].toLowerCase()}${slot.time ? ` às ${slot.time}` : ''}`;
-
-/** Asks before dropping fixed days that already have a time; true when it may go ahead. */
-function confirmDroppedSlots(patient, dropped) {
-  const timed = dropped.filter((slot) => slot.time);
-  return !timed.length || confirm(`Tirar ${timed.map(slotText).join(' e ')} dos dias fixos de ${patient.name}?`);
-}
-
-/**
- * "− 2 vezes por semana +": how many sessions the patient has in the week. Each one is a fixed day
- * with its own time; "+" adds a day (the first free working day, time to be filled in), "−" drops
- * the last. `save(schedule)` stores the new list.
- */
-function weeklyCountControl(app, patient, save) {
-  const count = patient.schedule.length;
-  const setCount = (next) => {
-    if (!confirmDroppedSlots(patient, patient.schedule.slice(Math.max(0, next)))) return;
-    save(withWeeklyCount(patient.schedule, next, app.dataset.settings.workDays));
-  };
-  return h(
-    'div',
-    { class: 'week-count' },
-    h('button', { type: 'button', class: 'week-count__step', 'aria-label': 'Uma vez a menos', disabled: count === 0, onClick: () => setCount(count - 1) }, '−'),
-    h('span', { class: 'week-count__value' }, weeklyCountText(count, patient.frequency)),
-    h('button', { type: 'button', class: 'week-count__step', 'aria-label': 'Uma vez a mais', disabled: count >= MAX_WEEKLY_SESSIONS, onClick: () => setCount(count + 1) }, '+'),
-  );
-}
-
-return { confirmDroppedSlots, weeklyCountControl };
 })();
 modules["ui/agenda-setup.js"] = (() => {
 const { savePatient, saveSettings } = modules["domain/mutations.js"];
