@@ -285,10 +285,29 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .gaps__note { margin-top: 6px; color: var(--warn); font-weight: 600; }
 .free-list__note { color: var(--warn); font-weight: 600; }
 
-/* —— Main-screen setup: what the agenda still needs to know (patients' times, working hours) —— */
-.setup-card { border: 2px solid var(--accent-bright); }
-.setup-card > p { margin-bottom: 12px; }
-.setup-block__title { font-size: 0.98rem; font-weight: 700; margin: 6px 0 8px; }
+/* —— Main screen: today's sessions and what is pending, in large type and large targets —— */
+.today-card .card-title, .pending-card .card-title { font-size: 1.2rem; }
+.today-list, .pending-list { list-style: none; margin: 0; padding: 0; }
+.today-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 0; border-top: 1px solid var(--border); }
+.today-row:first-child { border-top: none; padding-top: 4px; }
+.today-row--running { background: color-mix(in srgb, var(--dot-green) 10%, transparent); border-radius: var(--radius-sm); padding: 14px 12px; }
+.today-row__time { min-width: 8.5rem; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.today-row__name { flex: 1 1 14rem; display: flex; flex-direction: column; gap: 4px; font-size: 1.1rem; font-weight: 600; }
+.today-row__status { font-size: 0.9rem; font-weight: 500; }
+.today-row__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.today-row__actions .btn, .pending-item .btn { min-height: 44px; font-size: 0.98rem; }
+.today-row__paid { font-size: 1rem; }
+.today-row__paid input { width: 1.4rem; height: 1.4rem; }
+.today-empty { font-size: 1.1rem; }
+.pending-item { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 0; border-top: 1px solid var(--border); }
+.pending-item:first-child { border-top: none; padding-top: 4px; }
+.pending-item__text { flex: 1 1 16rem; display: flex; flex-direction: column; gap: 2px; font-size: 1.05rem; }
+.pending-item__hint { font-size: 0.88rem; color: var(--muted); }
+.live-dialog { display: flex; flex-direction: column; gap: 14px; }
+.details-card__summary { cursor: pointer; font-weight: 700; font-size: 1rem; }
+.details-card[open] .details-card__summary { margin-bottom: 14px; }
+
+/* —— Pending-item dialogs: patients' times, working hours, sessions without a record —— */
 .setup-list { list-style: none; margin: 0 0 12px; padding: 0; }
 .setup-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 0; border-top: 1px solid var(--border); }
 .setup-row__name { flex: 1 1 14rem; display: flex; flex-direction: column; font-weight: 700; }
@@ -297,7 +316,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .setup-row__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .setup-block { padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
 /* Larger targets for touch and for older eyes (at least 44 px high). */
-.setup-card .input, .setup-card .btn { min-height: 44px; font-size: 1rem; }
+.setup-list .input, .setup-list .btn, .setup-block .input, .setup-block .btn { min-height: 44px; font-size: 1rem; }
 
 /* —— Session bar: today's sessions, or the running session with its timer (as the Agenda's
    active-timer banner: opaque navy, light-blue digits, a blinking LED) —— */
@@ -305,8 +324,6 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .session-bar__text { flex: 1 1 14rem; font-weight: 500; }
 .session-bar__digits { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; color: #8cbbf0; }
 .session-bar__status { font-size: 0.9rem; }
-.session-bar__start { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.45); color: #fff; min-height: 44px; font-size: 0.95rem; }
-.session-bar__start:hover { background: rgba(255, 255, 255, 0.26); }
 .session-bar__stop { background: #fff; color: var(--ink); }
 .session-bar__stop:hover { background: #e8eef6; }
 .session-bar--running { position: sticky; top: 0; z-index: 5; }
@@ -538,7 +555,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 }
 
 @media print {
-  .tabs, .toolbar, .agenda-bar .btn, .btn, .legend, .side-panel, #sessionBar, .setup-card { display: none !important; }
+  .tabs, .toolbar, .agenda-bar .btn, .btn, .legend, .side-panel, #sessionBar, .pending-card { display: none !important; }
   .shell { display: block; }
   body { background: #fff; }
   .card, .cal-wrap { box-shadow: none; }
@@ -732,7 +749,13 @@ function titleCase(name) {
     .join(' ');
 }
 
-return { stripAccents, normalizeText, nameKey, titleCase };
+/** "SANT RECEB 2026!A9" → 'aba "SANT RECEB 2026", linha 9': where a record is in the spreadsheet, in plain words. */
+function describeCell(location) {
+  const match = /^(.*)!\$?[A-Z]+\$?(\d+)$/.exec(location ?? '');
+  return match ? `aba "${match[1]}", linha ${match[2]}` : location ?? '';
+}
+
+return { stripAccents, normalizeText, nameKey, titleCase, describeCell };
 })();
 modules["domain/status.js"] = (() => {
 const { normalizeText } = modules["lib/text.js"];
@@ -1057,6 +1080,7 @@ function createApp({ dataset: initialDataset, today, persist }) {
     patientSearch: '',
     patientId: null,
     expandedClosing: null,
+    monthAppointmentsOpen: false,
   };
 
   const notify = () => listeners.forEach((listener) => listener());
@@ -1099,8 +1123,12 @@ return { createApp };
 modules["domain/settings.js"] = (() => {
 const SCHEMA_VERSION = 3;
 
-// What the user decided about a statement deposit that looks like one already in a patient tab.
-const DEPOSIT_DECISION = Object.freeze({ NEW: 'novo', REPEATED: 'repetido' });
+// What the user decided about a statement deposit: another session payment, one already in a
+// patient tab, or money that is not a session payment at all.
+const DEPOSIT_DECISION = Object.freeze({ NEW: 'novo', REPEATED: 'repetido', NOT_PATIENT: 'nao_paciente' });
+
+/** The statement line stays out of the records (and of every total), also on later imports. */
+const discardsDeposit = (decision) => decision === DEPOSIT_DECISION.REPEATED || decision === DEPOSIT_DECISION.NOT_PATIENT;
 
 const DEFAULT_SETTINGS = Object.freeze({
   professionalName: '',
@@ -1120,7 +1148,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   receivablesSince: null,
   // Bank-statement client spelling (see clientKey) → patient id, decided by the user.
   clientAssignments: {},
-  // Statement cell → 'novo' | 'repetido', for deposits that look like one already in a patient tab.
+  // Statement cell → 'novo' | 'repetido' | 'nao_paciente' (see DEPOSIT_DECISION).
   depositDecisions: {},
   // Patient id → id of the same person's record that stays (confirmed by the user).
   mergedPatients: {},
@@ -1149,7 +1177,7 @@ function emptyDataset(today) {
   };
 }
 
-return { SCHEMA_VERSION, DEPOSIT_DECISION, DEFAULT_SETTINGS, emptyDataset };
+return { SCHEMA_VERSION, DEPOSIT_DECISION, discardsDeposit, DEFAULT_SETTINGS, emptyDataset };
 })();
 modules["domain/migrations.js"] = (() => {
 const { DEFAULT_SETTINGS, SCHEMA_VERSION } = modules["domain/settings.js"];
@@ -2302,7 +2330,7 @@ const { buildAliases, cleanPersonName, headerCpf, headerPatientName, sheetBaseNa
 const { parsePatientSheet } = modules["domain/parsing/patient-sheet.js"];
 const { parseStatementSheet } = modules["domain/parsing/statement-sheet.js"];
 const { inferUsualWeekday, isActivePatient, newPatient } = modules["domain/patients.js"];
-const { DEFAULT_SETTINGS, DEPOSIT_DECISION, SCHEMA_VERSION } = modules["domain/settings.js"];
+const { DEFAULT_SETTINGS, DEPOSIT_DECISION, discardsDeposit, SCHEMA_VERSION } = modules["domain/settings.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
 // Tabs that hold no record of their own. Matched against the trimmed tab name, in order.
 const EXCLUDED_SHEETS = [
@@ -2630,7 +2658,7 @@ function parseWorkbook(
   statements.assigned.forEach(({ key, entry }) => {
     const record = recordsByKey.get(key);
     const decision = depositDecisions[entry.source];
-    if (decision === DEPOSIT_DECISION.REPEATED) {
+    if (discardsDeposit(decision)) {
       decidedDeposits.push({ source: entry.source, date: entry.date, amount: entry.amount, client: entry.client, decision });
       return;
     }
@@ -2688,8 +2716,9 @@ function parseWorkbook(
 
   const unassignedPayments = statements.unassigned
     .filter((entry) => {
-      if (depositDecisions[entry.source] !== DEPOSIT_DECISION.REPEATED) return true;
-      decidedDeposits.push({ source: entry.source, date: entry.date, amount: entry.amount, client: entry.client, decision: DEPOSIT_DECISION.REPEATED });
+      const decision = depositDecisions[entry.source];
+      if (!discardsDeposit(decision)) return true;
+      decidedDeposits.push({ source: entry.source, date: entry.date, amount: entry.amount, client: entry.client, decision });
       return false;
     })
     .sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source))
@@ -5154,10 +5183,20 @@ modules["ui/pending-deposits.js"] = (() => {
 const { assignDeposit, createPatientForDeposit, decideDeposit } = modules["domain/deposits.js"];
 const { DEPOSIT_DECISION } = modules["domain/settings.js"];
 const { formatDate } = modules["lib/dates.js"];
+const { describeCell } = modules["lib/text.js"];
 const { button, card, select, table, toast } = modules["ui/components.js"];
 const { formatMoney, h } = modules["ui/dom.js"];
 const similarText = (app, deposit) =>
-  (deposit.similarPayments ?? []).map((item) => `${app.patientName(item.patientId)}: ${formatMoney(deposit.amount)} em ${formatDate(item.date)} (${item.source})`);
+  (deposit.similarPayments ?? []).map((item) => `${app.patientName(item.patientId)}: ${formatMoney(deposit.amount)} em ${formatDate(item.date)} (planilha: ${describeCell(item.source)})`);
+
+function notPatientButton(app, deposit) {
+  const discard = () => {
+    if (!confirm(`O depósito de ${formatMoney(deposit.amount)} em ${formatDate(deposit.date)} não é pagamento de sessão?\n\nEle sai desta lista e não entra em nenhum total.`)) return;
+    app.commit(decideDeposit(app.dataset, deposit.id, DEPOSIT_DECISION.NOT_PATIENT));
+    toast('Depósito marcado como "não é de paciente".');
+  };
+  return button('Não é de paciente', { variant: 'ghost', small: true, onClick: discard });
+}
 
 function decisionActions(app, deposit) {
   const decide = (decision, message) => {
@@ -5169,6 +5208,7 @@ function decisionActions(app, deposit) {
     { class: 'page-actions' },
     button('É outro depósito', { small: true, onClick: () => decide(DEPOSIT_DECISION.NEW, `Depósito lançado para ${app.patientName(deposit.suggestedPatientId)}.`) }),
     button('É o mesmo da ficha', { variant: 'secondary', small: true, onClick: () => decide(DEPOSIT_DECISION.REPEATED, 'Depósito descartado (já estava na ficha).') }),
+    notPatientButton(app, deposit),
   );
 }
 
@@ -5199,6 +5239,7 @@ function assignActions(app, deposit, patientOptions) {
     button('Atribuir', { small: true, onClick: assign }),
     button('Criar paciente', { variant: 'ghost', small: true, onClick: create }),
     deposit.similarPayments?.length ? button('Já está na ficha', { variant: 'ghost', small: true, onClick: discard }) : null,
+    notPatientButton(app, deposit),
   );
 }
 
@@ -5215,7 +5256,7 @@ function pendingDepositsCard(app) {
     h(
       'tr',
       {},
-      h('td', { 'data-label': 'Data' }, formatDate(deposit.date), h('div', { class: 'muted' }, deposit.source)),
+      h('td', { 'data-label': 'Data' }, formatDate(deposit.date), h('div', { class: 'muted' }, `Planilha: ${describeCell(deposit.source)}`)),
       h('td', { class: 'num', 'data-label': 'Valor' }, formatMoney(deposit.amount)),
       h('td', { 'data-label': 'No extrato' }, h('strong', {}, deposit.client), deposit.bank || deposit.reference ? h('div', { class: 'muted' }, [deposit.bank, deposit.reference].filter(Boolean).join(' · ')) : null),
       h(
@@ -5230,7 +5271,11 @@ function pendingDepositsCard(app) {
   return card(
     { id: 'depositos-pendentes' },
     h('h3', { class: 'card-title' }, `Depósitos do extrato aguardando sua decisão · ${deposits.length} · ${formatMoney(total)}`),
-    h('p', { class: 'muted' }, 'Não entram em nenhum total até você decidir. Nenhum foi atribuído por palpite: o nome não bate com um único paciente, ou o mesmo valor já aparece na ficha a poucos dias de distância.'),
+    h(
+      'p',
+      { class: 'muted' },
+      'Não entram em nenhum total até você decidir. Nenhum foi atribuído por palpite: o nome de quem depositou (muitas vezes o pai, a mãe ou outro responsável) não bate com um único paciente, ou o mesmo valor já aparece na ficha a poucos dias de distância. Escolha o paciente e toque em "Atribuir": os próximos depósitos com esse nome vão sozinhos para ele.',
+    ),
     table(['Data', { label: 'Valor', className: 'num' }, 'No extrato', 'Por que está aqui', 'Decisão'], rows, { className: 'table--responsive' }),
   );
 }
@@ -5854,19 +5899,77 @@ function agendaCalendar(app, entries) {
 
 return { AGENDA_MODES, agendaRange, rangeLabel, openDayPanel, agendaCalendar };
 })();
+modules["domain/session-timer.js"] = (() => {
+const { minutesOf } = modules["lib/dates.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+// The session timer: it starts when the psychologist says so, shows how long the session has run,
+// warns once at its nominal length and keeps counting until she stops it. It never starts by itself
+// and cannot be set back: it counts from the moment she started it.
+
+const MS_PER_MINUTE = 60_000;
+
+/** Identifies an agenda appointment across re-renders and reloads. */
+const appointmentKey = (entry) => `${entry.date}|${entry.patientId}|${entry.time ?? ''}`;
+
+/** An appointment that can still take place: not yet attended, missed or cancelled. */
+const isOpenAppointment = (entry) => !entry.session || entry.session.status === ATTENDANCE.SCHEDULED;
+
+/**
+ * The appointment to ask about now: today's, open, with a time that has come and a nominal length
+ * that has not run out yet, and not asked about before. Entries come sorted by time.
+ */
+function dueAppointment(entries, { today, nowMinutes, sessionMinutes, asked }) {
+  return (
+    entries.find((entry) => {
+      if (entry.date !== today || !entry.time || !isOpenAppointment(entry) || asked.has(appointmentKey(entry))) return false;
+      const start = minutesOf(entry.time);
+      return nowMinutes >= start && nowMinutes < start + sessionMinutes;
+    }) ?? null
+  );
+}
+
+function startTimer(entry, now, sessionMinutes) {
+  return { key: appointmentKey(entry), patientId: entry.patientId, date: entry.date, time: entry.time ?? '', startedAt: now, minutes: sessionMinutes, endNoticeShown: false };
+}
+
+const elapsedMs = (timer, now) => Math.max(0, now - timer.startedAt);
+
+const isOvertime = (timer, now) => elapsedMs(timer, now) >= timer.minutes * MS_PER_MINUTE;
+
+/** Whole minutes past the nominal length (0 before it). */
+const overtimeMinutes = (timer, now) => Math.max(0, Math.floor((elapsedMs(timer, now) - timer.minutes * MS_PER_MINUTE) / MS_PER_MINUTE));
+
+/** "05:07", or "1:02:07" from one hour on. */
+function formatElapsed(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return hours ? `${hours}:${minutes}:${seconds}` : `${minutes}:${seconds}`;
+}
+
+/** "56 min" or "1 h 05 min", for messages. */
+function formatDuration(ms) {
+  const totalMinutes = Math.floor(ms / MS_PER_MINUTE);
+  const hours = Math.floor(totalMinutes / 60);
+  return hours ? `${hours} h ${String(totalMinutes % 60).padStart(2, '0')} min` : `${totalMinutes} min`;
+}
+
+return { appointmentKey, isOpenAppointment, dueAppointment, startTimer, elapsedMs, isOvertime, overtimeMinutes, formatElapsed, formatDuration };
+})();
 modules["ui/agenda-setup.js"] = (() => {
 const { savePatient, saveSettings } = modules["domain/mutations.js"];
 const { FREQUENCY_LABELS } = modules["domain/patients.js"];
 const { scheduleGaps } = modules["domain/schedule.js"];
 const { isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
-const { button, card, select, toast } = modules["ui/components.js"];
+const { button, select, toast } = modules["ui/components.js"];
 const { h } = modules["ui/dom.js"];
 const { workHoursInputs } = modules["ui/work-hours.js"];
 const REGULAR_FREQUENCIES = Object.entries(FREQUENCY_LABELS).filter(([value]) => value !== 'avulsa');
 const WEEKDAYS = WEEKDAY_NAMES.map((name, index) => [String(index), name]);
 const WORK_HOURS_DRAFT = 'expediente';
 
-// What is typed in the card survives the re-render that saving another line causes.
+// What is typed survives the re-render that saving another line causes.
 const drafts = new Map();
 
 function gapHint(patient, slot) {
@@ -5909,7 +6012,9 @@ function gapRow(app, { patient, index }) {
   );
 }
 
-function workHoursBlock(app) {
+/** The working hours to check and confirm once (the dialog of that pending item). */
+function workHoursForm(app) {
+  if (app.dataset.settings.workHoursConfirmed) return h('p', { class: 'prompt__text' }, 'Expediente conferido. Pode fechar.');
   const workHours = workHoursInputs(drafts.get(WORK_HOURS_DRAFT) ?? app.dataset.settings, { onInput: (values) => drafts.set(WORK_HOURS_DRAFT, values) });
   const confirmHours = () => {
     const { errors, values } = workHours.read();
@@ -5921,32 +6026,270 @@ function workHoursBlock(app) {
   return h(
     'div',
     { class: 'setup-block' },
-    h('h4', { class: 'setup-block__title' }, 'Seu expediente'),
-    h('p', { class: 'muted' }, 'Confira os horários de atendimento e a duração da sessão: a agenda calcula as vagas com eles, e o cronômetro avisa quando a sessão chega a essa duração.'),
+    h('p', {}, 'Confira os horários de atendimento e a duração da sessão: a agenda calcula as vagas com eles, e o cronômetro avisa quando a sessão chega a essa duração.'),
     workHours.rows,
     h('div', { class: 'form-actions' }, button('Está certo, salvar', { onClick: confirmHours })),
   );
 }
 
-/**
- * Main-screen card that asks, in place, what the agenda needs to show the right free slots: the
- * time of each active patient's weekly session and the working hours. Each item leaves the card
- * once saved, and the card goes away when nothing is missing.
- */
-function agendaSetupCard(app) {
+/** One line per active patient whose fixed day lacks a time (the dialog of that pending item). */
+function scheduleGapsForm(app) {
   const gaps = scheduleGaps(app.dataset.patients, app.indexes.activeIds);
-  const needsHours = !app.dataset.settings.workHoursConfirmed;
-  if (!gaps.length && !needsHours) return null;
+  if (!gaps.length) return h('p', { class: 'prompt__text' }, 'Todos os pacientes têm dia e horário. Pode fechar.');
+  return [
+    h('p', {}, 'Informe o dia, o horário e a frequência de cada paciente e toque em "Salvar". Cada linha sai daqui assim que é salva.'),
+    h('ul', { class: 'setup-list' }, gaps.map((gap) => gapRow(app, gap))),
+  ];
+}
+
+return { workHoursForm, scheduleGapsForm };
+})();
+modules["ui/pending-tasks.js"] = (() => {
+const { buildAgenda, scheduleGaps } = modules["domain/schedule.js"];
+const { isOpenAppointment } = modules["domain/session-timer.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+const { addDaysIso, formatDate, weekdayName } = modules["lib/dates.js"];
+const { scheduleGapsForm, workHoursForm } = modules["ui/agenda-setup.js"];
+const { button, card, openDialog, signalDots } = modules["ui/components.js"];
+const { formatMoney, h, replaceChildren } = modules["ui/dom.js"];
+const { markEntry } = modules["ui/entry-actions.js"];
+// How far back the main screen looks for sessions nobody registered.
+const UNRECORDED_LOOKBACK_DAYS = 60;
+
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+
+/** Past appointments still open: expected by a weekly schedule, or scheduled and never marked. */
+function unrecordedEntries(app) {
+  const range = { from: addDaysIso(app.today, -UNRECORDED_LOOKBACK_DAYS), to: addDaysIso(app.today, -1) };
+  return buildAgenda(app.dataset, app.indexes, range, app.today).filter(isOpenAppointment);
+}
+
+/**
+ * A dialog whose content follows the records: a line saved there leaves it at once. The focus goes
+ * back to the control that had it, as on the main screen.
+ */
+function openLiveDialog(app, title, build) {
+  let unsubscribe = null;
+  const dialog = openDialog(
+    title,
+    () => {
+      const body = h('div', { class: 'live-dialog' });
+      const render = () => {
+        const focused = document.activeElement?.dataset?.focusKey;
+        replaceChildren(body, build());
+        if (focused) [...body.querySelectorAll('[data-focus-key]')].find((element) => element.dataset.focusKey === focused)?.focus();
+      };
+      render();
+      unsubscribe = app.subscribe(render);
+      return body;
+    },
+    { wide: true },
+  );
+  dialog.addEventListener('close', () => unsubscribe?.());
+}
+
+function unrecordedForm(app) {
+  const entries = unrecordedEntries(app);
+  if (!entries.length) return h('p', { class: 'prompt__text' }, 'Tudo registrado. Pode fechar.');
+  const name = (entry) => app.indexes.patientsById.get(entry.patientId)?.name ?? '—';
+  const mark = (entry, status) => markEntry(app, entry, status);
+  return [
+    h(
+      'p',
+      {},
+      'Para cada sessão, toque no que aconteceu. O dia de alguns pacientes foi sugerido pelo histórico da planilha, então pode haver sessões que não existiram: nesse caso, toque em "Não houve sessão".',
+    ),
+    h(
+      'ul',
+      { class: 'setup-list' },
+      entries.map((entry) =>
+        h(
+          'li',
+          { class: 'setup-row' },
+          h('span', { class: 'setup-row__name' }, name(entry), h('span', { class: 'setup-row__hint' }, `${weekdayName(entry.date)} ${formatDate(entry.date)}${entry.time ? ` · ${entry.time}` : ''}`)),
+          h(
+            'span',
+            { class: 'setup-row__actions' },
+            button('Realizada', { variant: 'success', onClick: () => mark(entry, ATTENDANCE.PRESENT) }),
+            button('Falta', { variant: 'danger-soft', onClick: () => mark(entry, ATTENDANCE.ABSENT) }),
+            button('Desmarcou', { variant: 'secondary', onClick: () => mark(entry, ATTENDANCE.CANCELLED_BY_PATIENT) }),
+            button('Não houve sessão', { variant: 'ghost', onClick: () => mark(entry, ATTENDANCE.NO_SESSION) }),
+          ),
+        ),
+      ),
+    ),
+  ];
+}
+
+function goToDeposits(app) {
+  app.setUi({ view: 'financeiro' });
+  // After the new screen is drawn (and scrolled to the top).
+  setTimeout(() => document.getElementById('depositos-pendentes')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
+function pendingItems(app) {
+  const items = [];
+  const gaps = scheduleGaps(app.dataset.patients, app.indexes.activeIds).length;
+  if (gaps) {
+    items.push({
+      text: plural(gaps, 'paciente sem horário definido', 'pacientes sem horário definido'),
+      hint: 'Sem o horário, a agenda não sabe quais horários estão livres.',
+      action: 'Informar',
+      open: () => openLiveDialog(app, 'Dia e horário de cada paciente', () => scheduleGapsForm(app)),
+    });
+  }
+  if (!app.dataset.settings.workHoursConfirmed) {
+    items.push({
+      text: 'Conferir o expediente',
+      hint: 'Horário de atendimento e duração da sessão (o cronômetro usa essa duração).',
+      action: 'Conferir',
+      open: () => openLiveDialog(app, 'Seu expediente', () => workHoursForm(app)),
+    });
+  }
+  const unrecorded = unrecordedEntries(app).length;
+  if (unrecorded) {
+    items.push({
+      text: plural(unrecorded, 'sessão passada sem registro', 'sessões passadas sem registro'),
+      hint: 'Diga se houve, se o paciente faltou ou desmarcou.',
+      action: 'Registrar',
+      open: () => openLiveDialog(app, 'Sessões sem registro', () => unrecordedForm(app)),
+    });
+  }
+  const deposits = app.dataset.unassignedPayments ?? [];
+  if (deposits.length) {
+    items.push({
+      text: `${plural(deposits.length, 'depósito do extrato sem paciente', 'depósitos do extrato sem paciente')} (${formatMoney(deposits.reduce((sum, item) => sum + item.amount, 0))})`,
+      hint: 'Ficam fora dos totais até você dizer de quem são.',
+      action: 'Decidir',
+      open: () => goToDeposits(app),
+    });
+  }
+  return items;
+}
+
+/** Everything that waits for the user, one line each; the button opens only that. */
+function pendingTasksCard(app) {
+  const items = pendingItems(app);
+  if (!items.length) return null;
   return card(
-    { class: 'setup-card' },
-    h('h3', { class: 'card-title' }, 'Para a agenda mostrar os horários livres certos'),
-    h('p', {}, 'Preencha uma vez só. Cada item sai daqui assim que é salvo.'),
-    gaps.length ? [h('h4', { class: 'setup-block__title' }, 'Dia e horário de cada paciente'), h('ul', { class: 'setup-list' }, gaps.map((gap) => gapRow(app, gap)))] : null,
-    needsHours ? workHoursBlock(app) : null,
+    { class: 'pending-card' },
+    h('h3', { class: 'card-title' }, 'Pendências'),
+    h(
+      'ul',
+      { class: 'pending-list' },
+      items.map((item) =>
+        h(
+          'li',
+          { class: 'pending-item' },
+          signalDots({ tone: 'yellow' }),
+          h('span', { class: 'pending-item__text' }, h('strong', {}, item.text), h('span', { class: 'pending-item__hint' }, item.hint)),
+          button(item.action, { onClick: item.open }),
+        ),
+      ),
+    ),
   );
 }
 
-return { agendaSetupCard };
+return { pendingTasksCard };
+})();
+modules["ui/today-card.js"] = (() => {
+const { buildAgenda, sessionTimeRange } = modules["domain/schedule.js"];
+const { appointmentKey, isOpenAppointment } = modules["domain/session-timer.js"];
+const { attendanceSignal } = modules["domain/signals.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+const { addDaysIso, formatDateLong } = modules["lib/dates.js"];
+const { button, card, signalLabel } = modules["ui/components.js"];
+const { h } = modules["ui/dom.js"];
+const { focusKey, markEntry, updateEntry } = modules["ui/entry-actions.js"];
+const { openSessionForm } = modules["ui/forms.js"];
+const LOOKAHEAD_DAYS = 14;
+
+const patientName = (app, entry) => app.indexes.patientsById.get(entry.patientId)?.name ?? '—';
+
+function paidCheck(app, entry) {
+  return h(
+    'label',
+    { class: 'check today-row__paid' },
+    h('input', {
+      type: 'checkbox',
+      checked: Boolean(entry.session?.paid),
+      'aria-label': `Sessão de ${patientName(app, entry)} paga`,
+      dataset: { focusKey: focusKey(entry, 'paid-today') },
+      onChange: (event) => updateEntry(app, entry, { paid: event.target.checked }),
+    }),
+    h('span', {}, 'Paga'),
+  );
+}
+
+function actions(app, entry, running) {
+  if (running) return h('span', { class: 'muted' }, 'Para terminar, toque em "Encerrar sessão", no alto da tela.');
+  if (!isOpenAppointment(entry)) {
+    return [entry.session?.fee > 0 ? paidCheck(app, entry) : null, button('Editar', { variant: 'ghost', onClick: () => openSessionForm(app, { session: entry.session }) })];
+  }
+  const mark = (status, message) => markEntry(app, entry, status, message);
+  return [
+    button('Iniciar sessão', { onClick: () => app.sessionTimer?.start(entry) }),
+    button('Realizada', { variant: 'success', onClick: () => mark(ATTENDANCE.PRESENT, 'Presença registrada.') }),
+    button('Falta', { variant: 'danger-soft', onClick: () => mark(ATTENDANCE.ABSENT, 'Falta registrada.') }),
+    button('Desmarcou', { variant: 'secondary', onClick: () => mark(ATTENDANCE.CANCELLED_BY_PATIENT, 'Desmarcação registrada. Quando o paciente avisou dá para informar em "Editar".') }),
+  ];
+}
+
+function sessionRow(app, entry) {
+  const { settings } = app.dataset;
+  const running = app.sessionTimer?.runningKey() === appointmentKey(entry);
+  return h(
+    'li',
+    { class: `today-row${running ? ' today-row--running' : ''}` },
+    h('span', { class: 'today-row__time' }, sessionTimeRange(entry.time, settings) || 'sem horário'),
+    h(
+      'span',
+      { class: 'today-row__name' },
+      patientName(app, entry),
+      h('span', { class: 'today-row__status' }, signalLabel(running ? { tone: 'green', label: 'Em andamento' } : attendanceSignal(entry, settings, app.today))),
+    ),
+    h('span', { class: 'today-row__actions' }, actions(app, entry, running)),
+  );
+}
+
+function nextDayText(app) {
+  const entries = buildAgenda(app.dataset, app.indexes, { from: addDaysIso(app.today, 1), to: addDaysIso(app.today, LOOKAHEAD_DAYS) }, app.today);
+  if (!entries.length) return null;
+  const { date } = entries[0];
+  const count = entries.filter((entry) => entry.date === date).length;
+  return `Próximo dia com sessão: ${formatDateLong(date)} (${count} ${count === 1 ? 'sessão' : 'sessões'}).`;
+}
+
+/** Today's sessions, each with what can be done now: start the timer, or say what happened. */
+function todayCard(app) {
+  const entries = buildAgenda(app.dataset, app.indexes, { from: app.today, to: app.today }, app.today);
+  return card(
+    { class: 'today-card' },
+    h('h3', { class: 'card-title' }, 'Sessões de hoje'),
+    entries.length
+      ? h('ul', { class: 'today-list' }, entries.map((entry) => sessionRow(app, entry)))
+      : h('p', { class: 'today-empty' }, 'Nenhuma sessão hoje.', h('br'), h('span', { class: 'muted' }, nextDayText(app) ?? 'Nenhuma sessão nos próximos 14 dias.')),
+  );
+}
+
+return { todayCard };
+})();
+modules["ui/views/hub.js"] = (() => {
+const { buildAgenda } = modules["domain/schedule.js"];
+const { agendaCalendar, agendaRange } = modules["ui/agenda-calendar.js"];
+const { h } = modules["ui/dom.js"];
+const { pendingTasksCard } = modules["ui/pending-tasks.js"];
+const { todayCard } = modules["ui/today-card.js"];
+/**
+ * The main screen, kept to what is used every day: today's sessions, what is pending, and the
+ * agenda. Patients, payments and the month's full list live in their own tabs.
+ */
+function renderHub(app) {
+  const entries = buildAgenda(app.dataset, app.indexes, agendaRange(app.ui), app.today);
+  return h('div', { class: 'stack' }, todayCard(app), pendingTasksCard(app), agendaCalendar(app, entries));
+}
+
+return { renderHub };
 })();
 modules["ui/appointments-table.js"] = (() => {
 const { attendanceSignal, paymentSignal } = modules["domain/signals.js"];
@@ -6116,228 +6459,14 @@ function appointmentsTable(app, entries) {
 
 return { appointmentsTable };
 })();
-modules["ui/patients-table.js"] = (() => {
-const { defaultReceivablesSince, receivables } = modules["domain/forecast.js"];
-const { summarizeSessions } = modules["domain/metrics.js"];
-const { savePatient } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, PATIENT_STATUS } = modules["domain/patients.js"];
-const { scheduledSlotsOn } = modules["domain/schedule.js"];
-const { ATTENDANCE } = modules["domain/status.js"];
-const { addDaysIso, eachDay, formatDate, isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
-const { button, emptyState, select, signalLabel, table } = modules["ui/components.js"];
-const { formatMoney, formatPercent, h, parseMoneyInput } = modules["ui/dom.js"];
-const { openPatientForm } = modules["ui/forms.js"];
-const LOOKAHEAD_DAYS = 62;
-const STATUS_OPTIONS = [
-  [PATIENT_STATUS.AUTO, 'Automático'],
-  [PATIENT_STATUS.ACTIVE, 'Ativo'],
-  [PATIENT_STATUS.CLOSED, 'Encerrado / alta'],
-];
-const moneyText = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
-const slotText = (slot) => `${WEEKDAY_NAMES[slot.weekday].slice(0, 3)} ${slot.time || 'sem horário'}`;
-
-/** Commits after focus has moved, so the re-render can restore it (see main.js). */
-function updatePatient(app, patientId, patch) {
-  setTimeout(() => {
-    const current = app.dataset.patients.find((patient) => patient.id === patientId);
-    if (current) app.commit(savePatient(app.dataset, { ...current, ...patch }));
-  });
-}
-
-function nextAppointment(app, patient) {
-  const booked = (app.indexes.sessionsByPatient.get(patient.id) ?? []).find((s) => s.date >= app.today && s.status === ATTENDANCE.SCHEDULED)?.date;
-  if (!app.indexes.activeIds.has(patient.id)) return booked ?? null;
-  const fromSchedule = eachDay(app.today, addDaysIso(app.today, LOOKAHEAD_DAYS)).find((date) => scheduledSlotsOn(patient, date).length);
-  return [booked, fromSchedule].filter(Boolean).sort()[0] ?? null;
-}
-
-function scheduleEditor(app, patient) {
-  const weekdayInput = select(WEEKDAY_NAMES.map((name, index) => [String(index), name.slice(0, 3)]), { value: '1', ariaLabel: 'Dia da semana' });
-  const timeInput = h('input', { class: 'input input--time', type: 'time', 'aria-label': 'Horário' });
-  const add = () => {
-    const slot = { weekday: Number(weekdayInput.value), time: isTime(timeInput.value) ? timeInput.value : '' };
-    app.commit(savePatient(app.dataset, { ...patient, schedule: [...patient.schedule, slot], scheduleInferred: false }));
-  };
-  const remove = (index) => app.commit(savePatient(app.dataset, { ...patient, schedule: patient.schedule.filter((_, i) => i !== index) }));
-  return h(
-    'div',
-    { class: 'slot-chips' },
-    patient.schedule.map((slot, index) =>
-      h(
-        'span',
-        { class: 'slot-chip', title: patient.scheduleInferred ? 'Dia sugerido pelo histórico; confirme o horário.' : null },
-        `${slotText(slot)}${patient.scheduleInferred ? ' (sugerido)' : ''}`,
-        h('button', { type: 'button', 'aria-label': `Remover ${slotText(slot)}`, onClick: () => remove(index) }, '×'),
-      ),
-    ),
-    h('span', { class: 'slot-add' }, weekdayInput, timeInput, button('Adicionar', { variant: 'secondary', small: true, onClick: add })),
-  );
-}
-
-function patientRow(app, patient, openByPatient, since) {
-  const sessions = app.indexes.sessionsByPatient.get(patient.id) ?? [];
-  const summary = summarizeSessions(sessions);
-  const isActive = app.indexes.activeIds.has(patient.id);
-  const open = openByPatient.get(patient.id);
-  const next = nextAppointment(app, patient);
-  return h(
-    'tr',
-    {},
-    h(
-      'td',
-      { class: 'cell-name', 'data-label': 'Paciente' },
-      h('button', { class: 'link', type: 'button', onClick: () => app.setUi({ view: 'pacientes', patientId: patient.id }) }, patient.name),
-      h('div', { class: 'cell-sub' }, signalLabel({ tone: isActive ? 'green' : 'gray', label: isActive ? 'Ativo' : 'Inativo' })),
-      patient.guardian ? h('div', { class: 'muted' }, `Resp.: ${patient.guardian}`) : null,
-    ),
-    h(
-      'td',
-      { class: 'cell-grow', 'data-label': 'Dias e horários' },
-      scheduleEditor(app, patient),
-      h(
-        'div',
-        { class: 'cell-sub cell-inline' },
-        select(Object.entries(FREQUENCY_LABELS), {
-          value: patient.frequency,
-          ariaLabel: 'Frequência',
-          dataset: { focusKey: `${patient.id}|frequency` },
-          onChange: (event) => updatePatient(app, patient.id, { frequency: event.target.value }),
-        }),
-        h(
-          'label',
-          { class: 'inline-field', title: 'Início da agenda; também define as semanas da frequência quinzenal ou mensal.' },
-          h('span', {}, 'desde'),
-          h('input', {
-            class: 'input',
-            type: 'date',
-            value: patient.scheduleStart ?? '',
-            'aria-label': 'Início',
-            dataset: { focusKey: `${patient.id}|scheduleStart` },
-            onChange: (event) => updatePatient(app, patient.id, { scheduleStart: event.target.value || null }),
-          }),
-        ),
-      ),
-    ),
-    h(
-      'td',
-      { class: 'num', 'data-label': 'Valor acordado' },
-      h('input', {
-        class: 'input input--fee',
-        inputmode: 'decimal',
-        value: moneyText(patient.defaultFee),
-        'aria-label': 'Valor acordado por sessão',
-        dataset: { focusKey: `${patient.id}|defaultFee` },
-        onChange: (event) => {
-          const fee = parseMoneyInput(event.target.value);
-          if (!Number.isNaN(fee)) updatePatient(app, patient.id, { defaultFee: fee });
-        },
-      }),
-    ),
-    h(
-      'td',
-      { 'data-label': 'Frequência' },
-      h('div', {}, `${summary.present} realizadas · ${formatPercent(summary.attendanceRate)}`),
-      h('div', { class: 'muted' }, `${summary.absent} faltas${summary.chargedAbsences ? ` (${summary.chargedAbsences} cobradas)` : ''}`),
-    ),
-    h(
-      'td',
-      { 'data-label': 'Última / próxima' },
-      h('div', {}, formatDate(app.indexes.lastSessionByPatient.get(patient.id))),
-      h('div', { class: 'muted' }, next ? `próxima ${formatDate(next)}` : 'sem próxima'),
-    ),
-    h('td', { class: 'num', 'data-label': 'Em aberto', title: `Sessões cobradas sem pagamento desde ${formatDate(since)}` }, open ? formatMoney(open.amount) : '—'),
-    h(
-      'td',
-      { 'data-label': 'Situação' },
-      select(STATUS_OPTIONS, {
-        value: patient.status,
-        ariaLabel: 'Situação',
-        dataset: { focusKey: `${patient.id}|status` },
-        onChange: (event) => updatePatient(app, patient.id, { status: event.target.value }),
-      }),
-    ),
-    h('td', { class: 'actions' }, button('Editar', { variant: 'secondary', small: true, onClick: () => openPatientForm(app, patient) })),
-  );
-}
-
-/** Detailed patient list, one row per patient, editable in place. */
-function patientsTable(app, patients) {
-  if (!patients.length) return emptyState('Nenhum paciente encontrado com esse filtro.');
-  const since = app.dataset.settings.receivablesSince ?? defaultReceivablesSince(app.today);
-  const openByPatient = new Map(receivables(app.dataset, since, app.today).map((row) => [row.patientId, row]));
-  return table(
-    [
-      'Paciente',
-      'Dias, horários e frequência',
-      { label: 'Valor acordado', className: 'num' },
-      'Histórico',
-      'Última / próxima',
-      { label: 'Em aberto', className: 'num' },
-      'Situação',
-      '',
-    ],
-    patients.map((patient) => patientRow(app, patient, openByPatient, since)),
-    { className: 'table--responsive' },
-  );
-}
-
-return { nextAppointment, patientsTable };
-})();
-modules["ui/views/hub.js"] = (() => {
-const { buildAgenda } = modules["domain/schedule.js"];
-const { agendaCalendar, agendaRange, rangeLabel } = modules["ui/agenda-calendar.js"];
-const { agendaSetupCard } = modules["ui/agenda-setup.js"];
-const { appointmentsTable } = modules["ui/appointments-table.js"];
-const { button, card, sectionTitle } = modules["ui/components.js"];
-const { formatMoney, h } = modules["ui/dom.js"];
-const { openPatientForm } = modules["ui/forms.js"];
-const { patientsTable } = modules["ui/patients-table.js"];
-const { paymentsSummary } = modules["ui/payments-summary.js"];
-/** Single place to run the practice: agenda, attendance, patients and payments. */
-function renderHub(app) {
-  const entries = buildAgenda(app.dataset, app.indexes, agendaRange(app.ui), app.today);
-  const activePatients = app.dataset.patients.filter((patient) => app.indexes.activeIds.has(patient.id));
-  const pending = app.dataset.unassignedPayments ?? [];
-  return h(
-    'div',
-    { class: 'stack' },
-    pending.length
-      ? h(
-          'div',
-          { class: 'banner banner--warn', role: 'status' },
-          `${pending.length} ${pending.length === 1 ? 'depósito do extrato aguarda' : 'depósitos do extrato aguardam'} sua decisão (${formatMoney(pending.reduce((sum, item) => sum + item.amount, 0))}, fora dos totais até lá). `,
-          h('button', { type: 'button', class: 'link', onClick: () => app.setUi({ view: 'financeiro' }) }, 'Decidir agora'),
-        )
-      : null,
-    agendaSetupCard(app),
-    agendaCalendar(app, entries),
-    card(
-      {},
-      sectionTitle(`Atendimentos · ${rangeLabel(app.ui)}`),
-      h('p', { class: 'muted' }, 'Marque presença ou falta, a justificativa e quando o paciente avisou: as horas até a sessão e o valor pela política de faltas são calculados na hora. Linhas em amarelo são sessões da agenda que ainda não foram registradas.'),
-      appointmentsTable(app, entries),
-    ),
-    card(
-      {},
-      sectionTitle(
-        `Pacientes ativos · ${activePatients.length}`,
-        button('Ver todos', { variant: 'secondary', onClick: () => app.setUi({ view: 'pacientes', patientId: null }) }),
-        button('Cadastrar paciente', { onClick: () => openPatientForm(app) }),
-      ),
-      patientsTable(app, activePatients),
-    ),
-    paymentsSummary(app),
-  );
-}
-
-return { renderHub };
-})();
 modules["ui/views/monthly.js"] = (() => {
 const { receivedTotal, summarizeSessions } = modules["domain/metrics.js"];
+const { buildAgenda } = modules["domain/schedule.js"];
 const { receiptKey, saveSession, setReceiptIssued } = modules["domain/mutations.js"];
 const { attendanceSignal } = modules["domain/signals.js"];
 const { ATTENDANCE_LABELS } = modules["domain/status.js"];
-const { formatDate, formatMonth, monthOf } = modules["lib/dates.js"];
+const { endOfMonth, formatDate, formatMonth, monthOf } = modules["lib/dates.js"];
+const { appointmentsTable } = modules["ui/appointments-table.js"];
 const { button, card, emptyState, pageHeader, select, signalDots, signalLabel, table } = modules["ui/components.js"];
 const { formatMoney, h } = modules["ui/dom.js"];
 const { openPaymentForm, openSessionForm } = modules["ui/forms.js"];
@@ -6426,6 +6555,27 @@ function closingRow(app, month, { patient, sessions, summary, received }) {
   return rows;
 }
 
+/**
+ * Every appointment of the month with all its fields (time, situation, reason, notice, value,
+ * paid), closed until opened: the day-to-day is on the main screen.
+ */
+function monthAppointments(app, month) {
+  const entries = buildAgenda(app.dataset, app.indexes, { from: `${month}-01`, to: endOfMonth(`${month}-01`) }, app.today);
+  return h(
+    'details',
+    {
+      class: 'card details-card',
+      open: Boolean(app.ui.monthAppointmentsOpen),
+      // Kept across re-renders without one: an edit in the list must not close it.
+      onToggle: (event) => {
+        app.ui.monthAppointmentsOpen = event.target.open;
+      },
+    },
+    h('summary', { class: 'details-card__summary' }, `Todos os atendimentos de ${formatMonth(month)} (${entries.length}), para editar um por um`),
+    appointmentsTable(app, entries),
+  );
+}
+
 function renderMonthly(app) {
   const month = app.ui.closingMonth;
   const rows = monthRows(app, month);
@@ -6469,6 +6619,7 @@ function renderMonthly(app) {
       { class: 'muted' },
       '"Recebido no mês" soma os pagamentos com data neste mês, que costumam quitar o mês anterior. "Sem pgto. registrado" considera as sessões cobradas que não estão marcadas como pagas. Ao usar "Receber", as sessões do mês são marcadas como pagas automaticamente.',
     ),
+    monthAppointments(app, month),
   );
 }
 
@@ -6650,6 +6801,173 @@ function renderOverview(app) {
 }
 
 return { renderOverview };
+})();
+modules["ui/patients-table.js"] = (() => {
+const { defaultReceivablesSince, receivables } = modules["domain/forecast.js"];
+const { summarizeSessions } = modules["domain/metrics.js"];
+const { savePatient } = modules["domain/mutations.js"];
+const { FREQUENCY_LABELS, PATIENT_STATUS } = modules["domain/patients.js"];
+const { scheduledSlotsOn } = modules["domain/schedule.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+const { addDaysIso, eachDay, formatDate, isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
+const { button, emptyState, select, signalLabel, table } = modules["ui/components.js"];
+const { formatMoney, formatPercent, h, parseMoneyInput } = modules["ui/dom.js"];
+const { openPatientForm } = modules["ui/forms.js"];
+const LOOKAHEAD_DAYS = 62;
+const STATUS_OPTIONS = [
+  [PATIENT_STATUS.AUTO, 'Automático'],
+  [PATIENT_STATUS.ACTIVE, 'Ativo'],
+  [PATIENT_STATUS.CLOSED, 'Encerrado / alta'],
+];
+const moneyText = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
+const slotText = (slot) => `${WEEKDAY_NAMES[slot.weekday].slice(0, 3)} ${slot.time || 'sem horário'}`;
+
+/** Commits after focus has moved, so the re-render can restore it (see main.js). */
+function updatePatient(app, patientId, patch) {
+  setTimeout(() => {
+    const current = app.dataset.patients.find((patient) => patient.id === patientId);
+    if (current) app.commit(savePatient(app.dataset, { ...current, ...patch }));
+  });
+}
+
+function nextAppointment(app, patient) {
+  const booked = (app.indexes.sessionsByPatient.get(patient.id) ?? []).find((s) => s.date >= app.today && s.status === ATTENDANCE.SCHEDULED)?.date;
+  if (!app.indexes.activeIds.has(patient.id)) return booked ?? null;
+  const fromSchedule = eachDay(app.today, addDaysIso(app.today, LOOKAHEAD_DAYS)).find((date) => scheduledSlotsOn(patient, date).length);
+  return [booked, fromSchedule].filter(Boolean).sort()[0] ?? null;
+}
+
+function scheduleEditor(app, patient) {
+  const weekdayInput = select(WEEKDAY_NAMES.map((name, index) => [String(index), name.slice(0, 3)]), { value: '1', ariaLabel: 'Dia da semana' });
+  const timeInput = h('input', { class: 'input input--time', type: 'time', 'aria-label': 'Horário' });
+  const add = () => {
+    const slot = { weekday: Number(weekdayInput.value), time: isTime(timeInput.value) ? timeInput.value : '' };
+    app.commit(savePatient(app.dataset, { ...patient, schedule: [...patient.schedule, slot], scheduleInferred: false }));
+  };
+  const remove = (index) => app.commit(savePatient(app.dataset, { ...patient, schedule: patient.schedule.filter((_, i) => i !== index) }));
+  return h(
+    'div',
+    { class: 'slot-chips' },
+    patient.schedule.map((slot, index) =>
+      h(
+        'span',
+        { class: 'slot-chip', title: patient.scheduleInferred ? 'Dia sugerido pelo histórico; confirme o horário.' : null },
+        `${slotText(slot)}${patient.scheduleInferred ? ' (sugerido)' : ''}`,
+        h('button', { type: 'button', 'aria-label': `Remover ${slotText(slot)}`, onClick: () => remove(index) }, '×'),
+      ),
+    ),
+    h('span', { class: 'slot-add' }, weekdayInput, timeInput, button('Adicionar', { variant: 'secondary', small: true, onClick: add })),
+  );
+}
+
+function patientRow(app, patient, openByPatient, since) {
+  const sessions = app.indexes.sessionsByPatient.get(patient.id) ?? [];
+  const summary = summarizeSessions(sessions);
+  const isActive = app.indexes.activeIds.has(patient.id);
+  const open = openByPatient.get(patient.id);
+  const next = nextAppointment(app, patient);
+  return h(
+    'tr',
+    {},
+    h(
+      'td',
+      { class: 'cell-name', 'data-label': 'Paciente' },
+      h('button', { class: 'link', type: 'button', onClick: () => app.setUi({ view: 'pacientes', patientId: patient.id }) }, patient.name),
+      h('div', { class: 'cell-sub' }, signalLabel({ tone: isActive ? 'green' : 'gray', label: isActive ? 'Ativo' : 'Inativo' })),
+      patient.guardian ? h('div', { class: 'muted' }, `Resp.: ${patient.guardian}`) : null,
+    ),
+    h(
+      'td',
+      { class: 'cell-grow', 'data-label': 'Dias e horários' },
+      scheduleEditor(app, patient),
+      h(
+        'div',
+        { class: 'cell-sub cell-inline' },
+        select(Object.entries(FREQUENCY_LABELS), {
+          value: patient.frequency,
+          ariaLabel: 'Frequência',
+          dataset: { focusKey: `${patient.id}|frequency` },
+          onChange: (event) => updatePatient(app, patient.id, { frequency: event.target.value }),
+        }),
+        h(
+          'label',
+          { class: 'inline-field', title: 'Início da agenda; também define as semanas da frequência quinzenal ou mensal.' },
+          h('span', {}, 'desde'),
+          h('input', {
+            class: 'input',
+            type: 'date',
+            value: patient.scheduleStart ?? '',
+            'aria-label': 'Início',
+            dataset: { focusKey: `${patient.id}|scheduleStart` },
+            onChange: (event) => updatePatient(app, patient.id, { scheduleStart: event.target.value || null }),
+          }),
+        ),
+      ),
+    ),
+    h(
+      'td',
+      { class: 'num', 'data-label': 'Valor acordado' },
+      h('input', {
+        class: 'input input--fee',
+        inputmode: 'decimal',
+        value: moneyText(patient.defaultFee),
+        'aria-label': 'Valor acordado por sessão',
+        dataset: { focusKey: `${patient.id}|defaultFee` },
+        onChange: (event) => {
+          const fee = parseMoneyInput(event.target.value);
+          if (!Number.isNaN(fee)) updatePatient(app, patient.id, { defaultFee: fee });
+        },
+      }),
+    ),
+    h(
+      'td',
+      { 'data-label': 'Frequência' },
+      h('div', {}, `${summary.present} realizadas · ${formatPercent(summary.attendanceRate)}`),
+      h('div', { class: 'muted' }, `${summary.absent} faltas${summary.chargedAbsences ? ` (${summary.chargedAbsences} cobradas)` : ''}`),
+    ),
+    h(
+      'td',
+      { 'data-label': 'Última / próxima' },
+      h('div', {}, formatDate(app.indexes.lastSessionByPatient.get(patient.id))),
+      h('div', { class: 'muted' }, next ? `próxima ${formatDate(next)}` : 'sem próxima'),
+    ),
+    h('td', { class: 'num', 'data-label': 'Em aberto', title: `Sessões cobradas sem pagamento desde ${formatDate(since)}` }, open ? formatMoney(open.amount) : '—'),
+    h(
+      'td',
+      { 'data-label': 'Situação' },
+      select(STATUS_OPTIONS, {
+        value: patient.status,
+        ariaLabel: 'Situação',
+        dataset: { focusKey: `${patient.id}|status` },
+        onChange: (event) => updatePatient(app, patient.id, { status: event.target.value }),
+      }),
+    ),
+    h('td', { class: 'actions' }, button('Editar', { variant: 'secondary', small: true, onClick: () => openPatientForm(app, patient) })),
+  );
+}
+
+/** Detailed patient list, one row per patient, editable in place. */
+function patientsTable(app, patients) {
+  if (!patients.length) return emptyState('Nenhum paciente encontrado com esse filtro.');
+  const since = app.dataset.settings.receivablesSince ?? defaultReceivablesSince(app.today);
+  const openByPatient = new Map(receivables(app.dataset, since, app.today).map((row) => [row.patientId, row]));
+  return table(
+    [
+      'Paciente',
+      'Dias, horários e frequência',
+      { label: 'Valor acordado', className: 'num' },
+      'Histórico',
+      'Última / próxima',
+      { label: 'Em aberto', className: 'num' },
+      'Situação',
+      '',
+    ],
+    patients.map((patient) => patientRow(app, patient, openByPatient, since)),
+    { className: 'table--responsive' },
+  );
+}
+
+return { nextAppointment, patientsTable };
 })();
 modules["ui/views/patients.js"] = (() => {
 const { mergePatients } = modules["domain/deposits.js"];
@@ -7240,72 +7558,9 @@ function registerOfflineCache() {
 
 return { registerOfflineCache };
 })();
-modules["domain/session-timer.js"] = (() => {
-const { minutesOf } = modules["lib/dates.js"];
-const { ATTENDANCE } = modules["domain/status.js"];
-// The session timer: it starts when the psychologist says so, shows how long the session has run,
-// warns once at its nominal length and keeps counting until she stops it. It never starts by itself
-// and cannot be set back: it counts from the moment she started it.
-
-const MS_PER_MINUTE = 60_000;
-
-/** Identifies an agenda appointment across re-renders and reloads. */
-const appointmentKey = (entry) => `${entry.date}|${entry.patientId}|${entry.time ?? ''}`;
-
-/** An appointment that can still take place: not yet attended, missed or cancelled. */
-const isOpenAppointment = (entry) => !entry.session || entry.session.status === ATTENDANCE.SCHEDULED;
-
-/**
- * The appointment to ask about now: today's, open, with a time that has come and a nominal length
- * that has not run out yet, and not asked about before. Entries come sorted by time.
- */
-function dueAppointment(entries, { today, nowMinutes, sessionMinutes, asked }) {
-  return (
-    entries.find((entry) => {
-      if (entry.date !== today || !entry.time || !isOpenAppointment(entry) || asked.has(appointmentKey(entry))) return false;
-      const start = minutesOf(entry.time);
-      return nowMinutes >= start && nowMinutes < start + sessionMinutes;
-    }) ?? null
-  );
-}
-
-/** Today's open appointments that can still begin: without a time, or before their end. */
-function upcomingAppointments(entries, { today, nowMinutes, sessionMinutes }) {
-  return entries.filter((entry) => entry.date === today && isOpenAppointment(entry) && (!entry.time || nowMinutes < minutesOf(entry.time) + sessionMinutes));
-}
-
-function startTimer(entry, now, sessionMinutes) {
-  return { key: appointmentKey(entry), patientId: entry.patientId, date: entry.date, time: entry.time ?? '', startedAt: now, minutes: sessionMinutes, endNoticeShown: false };
-}
-
-const elapsedMs = (timer, now) => Math.max(0, now - timer.startedAt);
-
-const isOvertime = (timer, now) => elapsedMs(timer, now) >= timer.minutes * MS_PER_MINUTE;
-
-/** Whole minutes past the nominal length (0 before it). */
-const overtimeMinutes = (timer, now) => Math.max(0, Math.floor((elapsedMs(timer, now) - timer.minutes * MS_PER_MINUTE) / MS_PER_MINUTE));
-
-/** "05:07", or "1:02:07" from one hour on. */
-function formatElapsed(ms) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-  const seconds = String(totalSeconds % 60).padStart(2, '0');
-  return hours ? `${hours}:${minutes}:${seconds}` : `${minutes}:${seconds}`;
-}
-
-/** "56 min" or "1 h 05 min", for messages. */
-function formatDuration(ms) {
-  const totalMinutes = Math.floor(ms / MS_PER_MINUTE);
-  const hours = Math.floor(totalMinutes / 60);
-  return hours ? `${hours} h ${String(totalMinutes % 60).padStart(2, '0')} min` : `${totalMinutes} min`;
-}
-
-return { appointmentKey, isOpenAppointment, dueAppointment, upcomingAppointments, startTimer, elapsedMs, isOvertime, overtimeMinutes, formatElapsed, formatDuration };
-})();
 modules["ui/session-timer.js"] = (() => {
 const { buildAgenda } = modules["domain/schedule.js"];
-const { appointmentKey, dueAppointment, elapsedMs, formatDuration, formatElapsed, isOpenAppointment, isOvertime, overtimeMinutes, startTimer, upcomingAppointments } = modules["domain/session-timer.js"];
+const { appointmentKey, dueAppointment, elapsedMs, formatDuration, formatElapsed, isOpenAppointment, isOvertime, overtimeMinutes, startTimer } = modules["domain/session-timer.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
 const { todayIso } = modules["lib/dates.js"];
 const { isLocked } = modules["ui/cloud-session.js"];
@@ -7317,7 +7572,6 @@ const { markEntry } = modules["ui/entry-actions.js"];
 const TIMER_KEY = 'controle-clinico/sessao-ativa';
 const ASKED_KEY = 'controle-clinico/sessoes-perguntadas';
 const TICK_MS = 1000;
-const MAX_UPCOMING = 4;
 const PAGE_TITLE = document.title;
 
 function readJson(key) {
@@ -7352,10 +7606,10 @@ const clock = (ms) => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit'
 const bigButton = (label, onClick, variant = 'primary') => h('button', { type: 'button', class: `btn btn--${variant} btn--large`, onClick, autofocus: variant === 'primary' }, label);
 
 /**
- * The session bar above the tabs, on every screen: today's sessions with a button to start each
- * one, or the running session with its time and a large "Encerrar sessão" button. At a session's
- * time it asks whether to start counting; at the agreed length it says so, and the count goes on
- * until she ends the session. Nothing here starts, stops or changes the time by itself.
+ * The session timer. While a session runs, a bar above the tabs (on every screen) shows its time and
+ * a large "Encerrar sessão" button. At a session's time it asks whether to start counting; at the
+ * agreed length it says so, and the count goes on until she ends the session. Nothing here starts,
+ * stops or changes the time by itself. `app.sessionTimer.start(entry)` starts it from a button.
  */
 function startSessionTimer(app) {
   const container = document.getElementById('sessionBar');
@@ -7364,7 +7618,6 @@ function startSessionTimer(app) {
   let prompt = null;
   let digits = null;
   let shownOvertime = false;
-  let shownMinute = -1;
 
   const nameOf = (patientId) => app.indexes.patientsById.get(patientId)?.name ?? 'paciente';
   const firstNameOf = (patientId) => nameOf(patientId).split(' ')[0];
@@ -7401,33 +7654,16 @@ function startSessionTimer(app) {
     );
   }
 
-  function idleBar(upcoming) {
-    return h(
-      'div',
-      { class: 'session-bar', role: 'region', 'aria-label': 'Sessões de hoje' },
-      h('span', { class: 'session-bar__text' }, 'Sessões de hoje:'),
-      upcoming.map((entry) =>
-        h('button', { type: 'button', class: 'btn session-bar__start', onClick: () => start(entry) }, `Iniciar · ${firstNameOf(entry.patientId)} ${entry.time || '(sem horário)'}`),
-      ),
-    );
-  }
-
   function render() {
     digits = null;
-    if (isLocked(app)) return replaceChildren(container);
-    const now = new Date();
-    shownMinute = now.getMinutes();
-    if (timer) return replaceChildren(container, runningBar(now));
-    const today = todayIso(now);
-    const upcoming = upcomingAppointments(entriesOf(today), { today, nowMinutes: minutesNow(now), sessionMinutes: app.dataset.settings.sessionMinutes });
-    replaceChildren(container, upcoming.length ? idleBar(upcoming.slice(0, MAX_UPCOMING)) : null);
+    replaceChildren(container, timer && !isLocked(app) ? runningBar(new Date()) : null);
   }
 
   function start(entry) {
     if (timer) return toast('Já há uma sessão em andamento. Encerre-a antes de começar outra.', 'danger');
     saveTimer(startTimer(entry, Date.now(), app.dataset.settings.sessionMinutes));
     markAsked(entry.date, timer.key);
-    render();
+    app.setUi({});
     toast(`Cronômetro iniciado: sessão de ${nameOf(entry.patientId)}.`);
   }
 
@@ -7436,7 +7672,7 @@ function startSessionTimer(app) {
     const duration = formatDuration(elapsedMs(current, Date.now()));
     saveTimer(null);
     document.title = PAGE_TITLE;
-    render();
+    app.setUi({});
     if (entryToMark) markEntry(app, entryToMark, ATTENDANCE.PRESENT, `Sessão encerrada (${duration}) e marcada como realizada.`);
     else toast(`Sessão encerrada: ${duration}.`);
   }
@@ -7531,7 +7767,6 @@ function startSessionTimer(app) {
       if (!prompt) document.title = over ? `Tempo da sessão acabou · ${PAGE_TITLE}` : `${formatElapsed(elapsedMs(timer, now.getTime()))} · ${PAGE_TITLE}`;
       return;
     }
-    if (now.getMinutes() !== shownMinute) render();
     if (prompt) return;
     document.title = PAGE_TITLE;
     const today = todayIso(now);
@@ -7543,11 +7778,12 @@ function startSessionTimer(app) {
   window.addEventListener('storage', (event) => {
     if (event.key === TIMER_KEY) {
       timer = readTimer();
-      render();
+      app.setUi({});
     }
     if (event.key === ASKED_KEY) asked = readAsked();
   });
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && tick());
+  app.sessionTimer = { start, runningKey: () => timer?.key ?? null };
   app.subscribe(render);
   render();
   setInterval(tick, TICK_MS);
@@ -7633,7 +7869,7 @@ function toggleSide(force) {
 
 function renderToolbar(app) {
   return [
-    button('Hoje', { onClick: () => app.setUi({ view: 'painel', agendaDate: app.today, agendaMode: 'dia' }) }),
+    button('Hoje', { onClick: () => app.setUi({ view: 'painel', agendaDate: app.today }) }),
     h('button', { type: 'button', id: 'sideToggle', class: 'btn btn--secondary', 'aria-controls': 'side', 'aria-expanded': String(readSideOpen()), onClick: () => toggleSide() }, 'Caderno e informações'),
     button('Tema claro/creme', { variant: 'secondary', onClick: toggleTheme }),
     button('Imprimir', { variant: 'secondary', onClick: () => window.print() }),
@@ -7758,9 +7994,10 @@ function start() {
     else restoreFocus(main, focusedKey);
     lastView = app.ui.view;
   };
+  // Before the first drawing: the main screen asks the timer which session is running.
+  startSessionTimer(app);
   app.subscribe(render);
   render();
-  startSessionTimer(app);
 }
 
 start();
