@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#1B4332" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0F1612" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F6EEDD" media="(prefers-color-scheme: dark)">
   <meta name="service-worker" content="./sw.js">
   <meta name="firebase-config" content="{&quot;apiKey&quot;:&quot;AIzaSyCceA2bBqi3smwgKNeGdrL7vCcnr9j-MSQ&quot;,&quot;authDomain&quot;:&quot;controle-clinico-angela.firebaseapp.com&quot;,&quot;projectId&quot;:&quot;controle-clinico-angela&quot;,&quot;storageBucket&quot;:&quot;controle-clinico-angela.firebasestorage.app&quot;,&quot;messagingSenderId&quot;:&quot;309883171482&quot;,&quot;appId&quot;:&quot;1:309883171482:web:8e3a459caae7f6981a6523&quot;}">
   <title>Controle Clínico</title>
@@ -30,15 +30,22 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 :root {
-  --bg: #f4f7f5;
+  --bg: #eef1f5;
+  --bg-image:
+    radial-gradient(900px 520px at 8% -10%, rgba(186, 214, 245, 0.9), rgba(186, 214, 245, 0) 70%),
+    radial-gradient(780px 480px at 100% 0%, rgba(198, 230, 206, 0.85), rgba(198, 230, 206, 0) 68%),
+    radial-gradient(720px 460px at 78% 100%, rgba(255, 214, 186, 0.8), rgba(255, 214, 186, 0) 70%),
+    radial-gradient(640px 420px at 0% 85%, rgba(210, 226, 248, 0.7), rgba(210, 226, 248, 0) 72%);
   --surface-2: #e8eeea;
-  --card: #ffffff;
+  --card: rgba(255, 255, 255, 0.62);
+  --glass: rgba(255, 255, 255, 0.55);
+  --glass-solid: rgba(255, 255, 255, 0.92);
   --accent: #1b4332;
   --accent-soft: #2d6a4f;
   --accent-glow: rgba(27, 67, 50, 0.14);
   --on-accent: #ffffff;
   --text: #1a1f1c;
-  --muted: #6b7280;
+  --muted: #4b5563;
   --border: #d8e0db;
   --today-bg: rgba(27, 67, 50, 0.08);
   --other-month: #9ca3af;
@@ -60,67 +67,37 @@
   color-scheme: light;
 }
 
+/* Creme: the Agenda do André's "dark" theme is a light beige one (vidro-liquido.css);
+   text, accent and LED colors stay those of the light theme. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1612;
-    --surface-2: #15201b;
-    --card: #1a2420;
-    --accent: #95d5b2;
-    --accent-soft: #74c69d;
-    --accent-glow: rgba(149, 213, 178, 0.16);
-    --on-accent: #0f1612;
-    --text: #e8eee9;
-    --muted: #9ca3af;
-    --border: #2a3731;
-    --today-bg: rgba(149, 213, 178, 0.12);
-    --other-month: #6b7280;
-    --danger: #f87171;
-    --danger-soft: #3b1414;
-    --warn: #fbbf24;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-    --dot-red: #f87171;
-    --dot-green: #4ade80;
-    --dot-yellow: #fbbf24;
-    --dot-orange: #f97316;
-    --dot-blue: #60a5fa;
-    --dot-gray: #6b7280;
-    --dot-cancel: #1f2937;
-    color-scheme: dark;
+    --bg: #f6eedd;
+    --bg-image:
+      radial-gradient(900px 520px at 12% -8%, rgba(244, 196, 154, 0.75), rgba(244, 196, 154, 0) 70%),
+      radial-gradient(760px 480px at 100% 8%, rgba(190, 214, 186, 0.7), rgba(190, 214, 186, 0) 68%),
+      radial-gradient(700px 440px at 70% 100%, rgba(186, 210, 232, 0.65), rgba(186, 210, 232, 0) 70%);
+    --card: rgba(255, 252, 244, 0.62);
+    --glass: rgba(255, 252, 244, 0.55);
+    --glass-solid: rgba(255, 252, 244, 0.92);
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f1612;
-  --surface-2: #15201b;
-  --card: #1a2420;
-  --accent: #95d5b2;
-  --accent-soft: #74c69d;
-  --accent-glow: rgba(149, 213, 178, 0.16);
-  --on-accent: #0f1612;
-  --text: #e8eee9;
-  --muted: #9ca3af;
-  --border: #2a3731;
-  --today-bg: rgba(149, 213, 178, 0.12);
-  --other-month: #6b7280;
-  --danger: #f87171;
-  --danger-soft: #3b1414;
-  --warn: #fbbf24;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --dot-red: #f87171;
-  --dot-green: #4ade80;
-  --dot-yellow: #fbbf24;
-  --dot-orange: #f97316;
-  --dot-blue: #60a5fa;
-  --dot-gray: #6b7280;
-  --dot-cancel: #1f2937;
-  color-scheme: dark;
+  --bg: #f6eedd;
+  --bg-image:
+    radial-gradient(900px 520px at 12% -8%, rgba(244, 196, 154, 0.75), rgba(244, 196, 154, 0) 70%),
+    radial-gradient(760px 480px at 100% 8%, rgba(190, 214, 186, 0.7), rgba(190, 214, 186, 0) 68%),
+    radial-gradient(700px 440px at 70% 100%, rgba(186, 210, 232, 0.65), rgba(186, 210, 232, 0) 70%);
+  --card: rgba(255, 252, 244, 0.62);
+  --glass: rgba(255, 252, 244, 0.55);
+  --glass-solid: rgba(255, 252, 244, 0.92);
 }
 
 /* Comfortable base size for all-day use; a step larger on big screens. */
 html { font-size: 16px; }
 @media (min-width: 1680px) { html { font-size: 17px; } }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.45; overflow-x: hidden; }
+body { margin: 0; font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background-color: var(--bg); background-image: var(--bg-image); background-repeat: no-repeat; background-attachment: fixed; color: var(--text); line-height: 1.45; overflow-x: hidden; }
 h1, h2, h3, h4, p { margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -409,8 +386,6 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .quote-row__chg.up { color: #15803d; }
 .quote-row__chg.down { color: var(--danger); }
 .quote-row__chg.flat { color: var(--muted); }
-:root[data-theme="dark"] .quote-row__chg.up { color: #4ade80; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .quote-row__chg.up { color: #4ade80; } }
 .notepad__status { font-size: 0.7rem; color: var(--muted); }
 .side-quote { margin: 0; padding: 4px 0 0 12px; border-left: 3px solid var(--accent-soft); }
 .side-quote p { white-space: pre-line; font-size: 0.9rem; line-height: 1.5; font-style: italic; }
@@ -466,6 +441,28 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
   .page-actions, .period { width: 100%; }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
   .input--search { min-width: 0; width: 100%; }
+}
+
+/* —— Vidro líquido (vidro-liquido.css da Agenda do André) ——
+   The big panels and the fixed controls are frosted glass over the colored background; the cards
+   inside them only get the translucent --card, without blur (the lists are long). */
+.side-card, .cal-wrap, .kpi, .dialog, .segmented, .backup-pill, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary {
+  background-color: var(--glass);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05));
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(22px) saturate(170%);
+  box-shadow: 0 10px 30px rgba(15, 30, 60, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+.side-card, .cal-wrap, .dialog, .segmented, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary { border-color: rgba(255, 255, 255, 0.6); }
+/* The KPI keeps its colored left border; the backup/cloud pill keeps its state border. */
+.kpi { border-top-color: rgba(255, 255, 255, 0.6); border-right-color: rgba(255, 255, 255, 0.6); border-bottom-color: rgba(255, 255, 255, 0.6); }
+.tab:not(.is-active):hover, .toolbar .btn--secondary:hover, .agenda-bar .btn--secondary:hover { border-color: var(--accent); }
+/* Without backdrop-filter, 0.55 vanishes into the background: almost opaque, so text stays readable. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .side-card, .cal-wrap, .kpi, .dialog, .segmented, .backup-pill, .tab:not(.is-active), .toolbar .btn--secondary, .agenda-bar .btn--secondary {
+    background-color: var(--glass-solid);
+    background-image: none;
+  }
 }
 
 @media print {
@@ -7057,7 +7054,7 @@ function renderToolbar(app) {
   return [
     button('Hoje', { onClick: () => app.setUi({ view: 'painel', agendaDate: app.today, agendaMode: 'dia' }) }),
     h('button', { type: 'button', id: 'sideToggle', class: 'btn btn--secondary', 'aria-controls': 'side', 'aria-expanded': String(readSideOpen()), onClick: () => toggleSide() }, 'Caderno e informações'),
-    button('Tema claro/escuro', { variant: 'secondary', onClick: toggleTheme }),
+    button('Tema claro/creme', { variant: 'secondary', onClick: toggleTheme }),
     button('Imprimir', { variant: 'secondary', onClick: () => window.print() }),
   ];
 }
