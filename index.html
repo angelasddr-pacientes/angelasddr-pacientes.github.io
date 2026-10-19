@@ -203,31 +203,32 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .dot-signal--blue { color: var(--dot-blue); }
 .dot-signal--gray { color: var(--dot-gray); }
 .dot-signal--cancel { color: var(--dot-cancel); }
-/* The sequence of the video, like a car's sequential turn signal: the dots light up from left to
-   right, one step apart, and go out in the same order; then the strip rests pale (15%) until the next
-   cycle. Fading like a lamp (pedido do usuário, 19/10: "mais efeito fading, está muito artificial"):
-   each dot swells in (13% of the cycle, ease-in-out), stays lit, then dims with an afterglow (a slow
-   start, a quicker middle, a long faint tail until 64%), its glow growing and shrinking with it.
-   Active strips: every 800 ms, 24 ms apart. Slow strips (not confirmed or not active, and the alerts
-   red and orange): every 1.6 s, 48 ms apart, so they start with every second cycle of the others.
-   Every strip blinks in step (led-sync.js). */
-@keyframes led-seta {
-  0% { opacity: 0.15; box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.37, 0, 0.63, 1); }
-  13% { opacity: 1; box-shadow: 0 0 5px 1px currentColor; }
-  30% { opacity: 1; box-shadow: 0 0 5px 1px currentColor; animation-timing-function: cubic-bezier(0.12, 0, 0.39, 0); }
-  42% { opacity: 0.55; box-shadow: 0 0 3px 0 currentColor; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
-  64%, 100% { opacity: 0.15; box-shadow: 0 0 0 0 transparent; }
+/* Few lights, each blinking like a Boeing's strobe (pedido do usuário, 19/10: "parecendo carnaval";
+   "todas as piscadas devem parecer com o tipo de piscada de um Boeing"): a single short flash that
+   snaps on, pops a little and dies away, then dark until the next one (Boeing wing strobes flash once;
+   Airbus ones twice). Off, a dot rests pale (15%).
+   Active, confirmed, paid (green, blue; a running session): 2 dots every 800 ms (75 a minute, inside the
+   40-100 of aviation anti-collision lights), lit left to right 40 ms apart, like the sequential turn
+   signal, so the pair reads as one flash sweeping right.
+   Slow (not confirmed or not active, and the alerts red and orange): 1 dot every 1.6 s, its flash
+   bursting like an explosion: a brighter pop whose glow spreads out and fades over 700 ms.
+   Every 1.6 s all of them flash together (led-sync.js). */
+@keyframes led-strobe {
+  0% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
+  5% { opacity: 1; transform: scale(1.2); box-shadow: 0 0 4px 1px currentColor; animation-timing-function: cubic-bezier(0.15, 0.6, 0.35, 1); }
+  38%, 100% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 9px 3px transparent; }
 }
-.dot-signals { --led-cycle: 800ms; --led-step: 24ms; }
-.dot-signals--slow { --led-cycle: 1600ms; --led-step: 48ms; }
-.dot-signals .geo-dot { animation: led-seta var(--led-cycle) linear infinite backwards; }
-.dot-signals .geo-dot:nth-child(2) { animation-delay: var(--led-step); }
-.dot-signals .geo-dot:nth-child(3) { animation-delay: calc(var(--led-step) * 2); }
-.dot-signals .geo-dot:nth-child(4) { animation-delay: calc(var(--led-step) * 3); }
-.dot-signals .geo-dot:nth-child(5) { animation-delay: calc(var(--led-step) * 4); }
-.dot-signals .geo-dot:nth-child(6) { animation-delay: calc(var(--led-step) * 5); }
-.dot-signals .geo-dot:nth-child(7) { animation-delay: calc(var(--led-step) * 6); }
-.dot-signals .geo-dot:nth-child(8) { animation-delay: calc(var(--led-step) * 7); }
+@keyframes led-burst {
+  0% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 0 0 transparent; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
+  3% { opacity: 1; transform: scale(1.35); box-shadow: 0 0 5px 2px currentColor; animation-timing-function: cubic-bezier(0.1, 0.7, 0.3, 1); }
+  45%, 100% { opacity: 0.15; transform: scale(1); box-shadow: 0 0 16px 7px transparent; }
+}
+.dot-signals .geo-dot { animation: led-strobe 800ms linear infinite backwards; }
+.dot-signals .geo-dot:nth-child(2) { animation-delay: 40ms; }
+.dot-signals--slow .geo-dot { animation-name: led-burst; animation-duration: 1600ms; }
+/* A slow strip with several colours (the day's alerts) flashes them one after the other. */
+.dot-signals--slow .geo-dot:nth-child(2) { animation-delay: 120ms; }
+.dot-signals--slow .geo-dot:nth-child(3) { animation-delay: 240ms; }
 /* The alerts (red, orange) are smaller: 1 px less than the other dots (4 px), never under 2.5 px. */
 .geo-dot.dot-signal--red, .geo-dot.dot-signal--orange { --alert-dot: max(2.5px, calc(var(--dot-size) - 1px)); width: var(--alert-dot); height: var(--alert-dot); min-width: var(--alert-dot); }
 /* Like the Agenda Digital, LEDs respect the system's "reduce motion"; the user may ask the
@@ -1817,10 +1818,10 @@ const SIGNAL = Object.freeze({
 });
 
 // Not confirmed (no record, payment open) or not active (cancelled, holiday, inactive patient, nothing
-// to charge, backup off): their LEDs have half the dots and blink at half the pace (styles.css).
+// to charge, backup off): a single LED, flashing at half the pace (styles.css).
 const CALM_TONES = Object.freeze([SIGNAL.YELLOW, SIGNAL.GRAY, SIGNAL.CANCEL]);
 
-// The alerts (falta, desmarcou em cima da hora): smaller dots, blinking at the slow pace (styles.css).
+// The alerts (falta, desmarcou em cima da hora): a single, smaller LED, flashing at the slow pace.
 const ALERT_TONES = Object.freeze([SIGNAL.RED, SIGNAL.ORANGE]);
 
 // Same order as the Agenda Digital legend: alerts first.
@@ -1963,29 +1964,27 @@ modules["ui/components.js"] = (() => {
 const { ALERT_TONES, CALM_TONES, SIGNAL_LEGEND } = modules["domain/signals.js"];
 const { formatMonth } = modules["lib/dates.js"];
 const { h } = modules["ui/dom.js"];
-// Every LED is a strip of dots inside a gray outline, lit in sequence (styles.css): the pills of the
-// Agenda do André (its P1 has 8 dots), without the priority label. What is not confirmed or not active
-// gets half the dots, blinking slower; the alerts (red, orange) blink slower too, with smaller dots.
-const LED_DOTS = 8;
+// Every LED sits inside a gray outline (the pills of the Agenda do André, without the priority label) and
+// flashes like an aircraft strobe (styles.css). Few lights: what is active, confirmed or paid has 2 dots;
+// the slow ones (not confirmed, not active, the alerts red and orange) have 1 dot per colour.
+const ACTIVE_DOTS = 2;
 
-/** The strip's dots shared among the colours, in order: one colour takes them all. */
+const isSlow = (tone) => CALM_TONES.includes(tone) || ALERT_TONES.includes(tone);
+
+/** The dots shared among the colours, in order: one colour takes them all. */
 function stripTones(tones, count) {
   const share = Math.floor(count / tones.length);
   const extra = count % tones.length;
   return tones.flatMap((tone, index) => Array(share + (index < extra ? 1 : 0)).fill(tone));
 }
 
-const isCalm = (tone) => CALM_TONES.includes(tone);
-const isSlow = (tone) => isCalm(tone) || ALERT_TONES.includes(tone);
-
-/** `active` keeps the full, quick strip whatever the colour (a running session). */
+/** `active` keeps the 2 quick dots whatever the colour (a running session). */
 function ledStrip(tones, { label = '', className = '', active = false }) {
-  const calm = !active && tones.every(isCalm);
   const slow = !active && tones.every(isSlow);
   return h(
     'span',
-    { class: ['dot-signals', calm ? 'dot-signals--calm' : '', slow ? 'dot-signals--slow' : '', className].filter(Boolean).join(' '), title: label || null, 'aria-hidden': label ? null : 'true' },
-    stripTones(tones, calm ? LED_DOTS / 2 : LED_DOTS).map((tone) => h('span', { class: `geo-dot dot-signal--${tone}` })),
+    { class: ['dot-signals', slow ? 'dot-signals--slow' : '', className].filter(Boolean).join(' '), title: label || null, 'aria-hidden': label ? null : 'true' },
+    (slow ? tones : stripTones(tones, Math.max(ACTIVE_DOTS, tones.length))).map((tone) => h('span', { class: `geo-dot dot-signal--${tone}` })),
   );
 }
 
@@ -2003,7 +2002,7 @@ function signalLegend() {
     'p',
     { class: 'legend', 'aria-label': 'Legenda dos sinais' },
     SIGNAL_LEGEND.map(([tone, label]) => h('span', { class: 'legend-item' }, signalDots({ tone }), label)),
-    h('span', { class: 'legend-note' }, '4 pontos, mais devagar: sem confirmação ou fora de atividade'),
+    h('span', { class: 'legend-note' }, '2 pontos: agendada, realizada, paga, ativo · 1 ponto, mais devagar: alerta, sem confirmação ou fora de atividade'),
   );
 }
 
@@ -2127,7 +2126,7 @@ function toast(message, tone = 'success') {
   setTimeout(() => element.remove(), 3500);
 }
 
-return { LED_DOTS, signalDots, signalGroup, signalLabel, signalLegend, button, kpiCard, card, emptyState, pageHeader, sectionTitle, field, select, table, periodPicker, periodLabel, openDialog, toast };
+return { ACTIVE_DOTS, signalDots, signalGroup, signalLabel, signalLegend, button, kpiCard, card, emptyState, pageHeader, sectionTitle, field, select, table, periodPicker, periodLabel, openDialog, toast };
 })();
 modules["domain/parsing/cells.js"] = (() => {
 const { stripAccents } = modules["lib/text.js"];
@@ -8313,13 +8312,13 @@ return { renderPatients };
 modules["ui/led-sync.js"] = (() => {
 // Keeps every LED strip blinking in step, as in the Agenda do André: a strip drawn later (another view,
 // the session bar, the backup status) joins the cycle the others are in instead of starting its own.
-const LED_ANIMATION = 'led-seta';
+const LED_ANIMATIONS = ['led-strobe', 'led-burst'];
 
 function alignLeds() {
   // getAnimations() applies pending styles first, so strips just added are included.
   document.getAnimations().forEach((animation) => {
     // CSS transitions are listed too, without an animation name.
-    if (animation.animationName === LED_ANIMATION && animation.startTime !== 0) animation.startTime = 0;
+    if (LED_ANIMATIONS.includes(animation.animationName) && animation.startTime !== 0) animation.startTime = 0;
   });
 }
 
