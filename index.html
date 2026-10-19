@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#1B4332" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0D223B" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#F6EEDD" media="(prefers-color-scheme: dark)">
   <meta name="service-worker" content="./sw.js">
   <meta name="firebase-config" content="{&quot;apiKey&quot;:&quot;AIzaSyCceA2bBqi3smwgKNeGdrL7vCcnr9j-MSQ&quot;,&quot;authDomain&quot;:&quot;controle-clinico-angela.firebaseapp.com&quot;,&quot;projectId&quot;:&quot;controle-clinico-angela&quot;,&quot;storageBucket&quot;:&quot;controle-clinico-angela.firebasestorage.app&quot;,&quot;messagingSenderId&quot;:&quot;309883171482&quot;,&quot;appId&quot;:&quot;1:309883171482:web:8e3a459caae7f6981a6523&quot;}">
   <title>Controle Clínico</title>
   <style>
-/* Visual base: Agenda Digital (deep green desk calendar), adapted for the clinic. */
+/* Visual base: the Agenda do André (navy palette, liquid glass, creme), adapted for the clinic. */
 
 /* Google Sans Flex (OFL 1.1), bundled: works offline and makes no request to Google. */
 @font-face {
@@ -36,25 +36,29 @@
     radial-gradient(780px 480px at 100% 0%, rgba(198, 230, 206, 0.85), rgba(198, 230, 206, 0) 68%),
     radial-gradient(720px 460px at 78% 100%, rgba(255, 214, 186, 0.8), rgba(255, 214, 186, 0) 70%),
     radial-gradient(640px 420px at 0% 85%, rgba(210, 226, 248, 0.7), rgba(210, 226, 248, 0) 72%);
-  --surface-2: #e8eeea;
+  --surface-2: #f4f5f7;
   --card: rgba(255, 255, 255, 0.62);
   --glass: rgba(255, 255, 255, 0.55);
   --glass-solid: rgba(255, 255, 255, 0.92);
-  --accent: #1b4332;
-  --accent-soft: #2d6a4f;
-  --accent-glow: rgba(27, 67, 50, 0.14);
+  /* Palette, radii and shadow of the Agenda do André (vps/public/index.html). */
+  --ink: #0d223b;
+  --ink-soft: #1a395c;
+  --accent: #1b477a;
+  --accent-bright: #2d6eb8;
+  --verde: #1b7a55;
+  --accent-glow: rgba(27, 71, 122, 0.14);
   --on-accent: #ffffff;
-  --text: #1a1f1c;
+  --text: #121920;
   --muted: #5a636e;
-  --border: #d8e0db;
-  --today-bg: rgba(27, 67, 50, 0.08);
+  --border: #c8d0d9;
+  --today-bg: rgba(27, 71, 122, 0.12);
   --other-month: #9aa3ad;
-  --danger: #b91c1c;
+  --danger: #a02a1f;
   --danger-soft: #fee2e2;
   --warn: #b45309;
-  --shadow: 0 1px 3px rgba(26, 31, 28, 0.06);
-  --radius: 14px;
-  --radius-sm: 10px;
+  --shadow: 0 4px 24px rgba(13, 34, 59, 0.12);
+  --radius: 22px;
+  --radius-sm: 12px;
   /* LEDs of the Agenda do André (vps/public/index.html, "seta-pontos"): 5 px dots, 2 px apart;
      red, green, yellow, blue and light gray are its colors. It has no orange or dark gray LED. */
   --dot-size: 5px;
@@ -70,7 +74,7 @@
 }
 
 /* Creme: the Agenda do André's "dark" theme is a light beige one (vidro-liquido.css), with its own
-   gray and border (vps/public/index.html); text, accent and LED colors stay those of the light theme. */
+   gray, border, surface, today and shadow (vps/public/index.html); the rest stays as in the light theme. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #f6eedd;
@@ -83,6 +87,9 @@
     --glass-solid: rgba(255, 252, 244, 0.92);
     --muted: #505862;
     --border: #d3c5ab;
+    --surface-2: #f6eedd;
+    --today-bg: #dfe7f1;
+    --shadow: 0 4px 24px rgba(90, 66, 20, 0.12);
   }
 }
 
@@ -97,6 +104,9 @@
   --glass-solid: rgba(255, 252, 244, 0.92);
   --muted: #505862;
   --border: #d3c5ab;
+  --surface-2: #f6eedd;
+  --today-bg: #dfe7f1;
+  --shadow: 0 4px 24px rgba(90, 66, 20, 0.12);
 }
 
 /* Comfortable base size for all-day use; a step larger on big screens. */
@@ -118,7 +128,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* —— Header and tabs (top chrome, as in the Agenda Digital) —— */
 .app { width: 100%; margin: 0; padding: 16px clamp(12px, 1.6vw, 28px) 48px; }
 .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
-.header-brand h1 { font-size: 1.35rem; font-weight: 700; color: var(--accent); }
+.header-brand h1 { font-size: 1.35rem; font-weight: 700; color: var(--ink); }
 .header-sub { font-size: 0.8rem; color: var(--muted); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -226,7 +236,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 /* —— Month grid —— */
 .cal-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 .weekday-row, .days-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
-.weekday-row { background: var(--surface-2); color: var(--muted); border-bottom: 1px solid var(--border); }
+.weekday-row { background: var(--ink); color: #fff; border-bottom: 1px solid var(--border); }
 .weekday { text-align: center; font-size: 0.72rem; font-weight: 600; padding: 8px 2px; letter-spacing: 0.04em; text-transform: uppercase; }
 .day-cell { min-height: 7.2rem; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 6px; background: var(--card); display: flex; flex-direction: column; gap: 3px; cursor: pointer; text-align: left; border-top: none; border-left: none; }
 .day-cell:nth-child(7n) { border-right: none; }
@@ -240,7 +250,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .day-tag { font-size: 0.62rem; font-weight: 600; line-height: 1.2; padding: 1px 5px; border-radius: 6px; background: var(--surface-2); color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .day-tag--feriado { background: color-mix(in srgb, var(--dot-red) 14%, var(--card)); color: var(--danger); }
 .day-tag--ponto_facultativo { background: color-mix(in srgb, var(--dot-orange) 14%, var(--card)); color: var(--warn); }
-.day-tag--comemorativa { background: color-mix(in srgb, var(--dot-green) 14%, var(--card)); color: var(--accent-soft); }
+.day-tag--comemorativa { background: color-mix(in srgb, var(--dot-green) 14%, var(--card)); color: var(--verde); }
 .day-tag--pessoal { background: color-mix(in srgb, var(--dot-blue) 14%, var(--card)); color: var(--dot-blue); }
 .day-num { font-size: 0.82rem; font-weight: 700; padding: 1px 5px; border-radius: 999px; }
 .day-cell.today .day-num { background: var(--accent); color: var(--on-accent); }
@@ -248,7 +258,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .day-entry { display: flex; align-items: center; gap: 4px; font-size: 0.7rem; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day-entry span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .day-more { font-size: 0.68rem; color: var(--muted); }
-.day-free { margin-top: auto; font-size: 0.66rem; color: var(--accent-soft); font-weight: 600; }
+.day-free { margin-top: auto; font-size: 0.66rem; color: var(--accent-bright); font-weight: 600; }
 
 /* —— Week columns —— */
 .week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
@@ -260,7 +270,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .entry-chip > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-chip:hover { border-color: var(--accent); }
 .entry-chip__time { font-weight: 700; font-variant-numeric: tabular-nums; }
-.free-list { list-style: none; margin: 0; padding: 6px 8px; border: 1px dashed var(--border); border-radius: 8px; font-size: 0.74rem; color: var(--accent-soft); }
+.free-list { list-style: none; margin: 0; padding: 6px 8px; border: 1px dashed var(--border); border-radius: 8px; font-size: 0.74rem; color: var(--accent-bright); }
 .free-list li + li { margin-top: 2px; }
 .gaps { padding: 12px 14px; background: var(--surface-2); border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: 0.88rem; }
 .gaps ul { margin: 6px 0 0; padding-left: 1.1rem; }
@@ -308,7 +318,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 15px; border-radius: 999px; border: 1px solid transparent; font-weight: 600; font-size: 0.88rem; cursor: pointer; white-space: nowrap; }
 .btn--small { padding: 5px 10px; font-size: 0.78rem; }
 .btn--primary { background: var(--accent); color: var(--on-accent); }
-.btn--primary:hover { background: var(--accent-soft); }
+.btn--primary:hover { background: var(--ink-soft); }
 .btn--success { background: var(--dot-blue); color: #fff; }
 .btn--danger { background: var(--dot-red); color: #fff; }
 .btn--danger-soft { background: var(--danger-soft); color: var(--danger); }
@@ -352,7 +362,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .chart svg { width: 100%; height: auto; display: block; }
 .chart__grid { stroke: var(--border); stroke-width: 1; }
 .chart__axis { fill: var(--muted); font-size: 11px; }
-.chart__bar--primary { fill: var(--accent-soft); background: var(--accent-soft); }
+.chart__bar--primary { fill: var(--accent-bright); background: var(--accent-bright); }
 .chart__bar--success { fill: var(--dot-blue); background: var(--dot-blue); }
 .chart__bar--danger { fill: var(--dot-red); background: var(--dot-red); }
 .chart__bar--warning { fill: var(--dot-orange); background: var(--dot-orange); }
@@ -376,7 +386,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 @media (prefers-reduced-motion: reduce) { .side-panel { transition: none; } }
 .side-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; }
 .side-card__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.side-card__head h2 { font-size: 0.98rem; font-weight: 700; color: var(--accent); margin-right: auto; }
+.side-card__head h2 { font-size: 0.98rem; font-weight: 700; color: var(--ink); margin-right: auto; }
 .side-today { font-weight: 600; margin-bottom: 6px; }
 .side-campaign { font-size: 0.8rem; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--today-bg); margin: 6px 0; }
 .side-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
@@ -391,7 +401,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .date-badge { display: inline-block; font-size: 0.64rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; vertical-align: 1px; }
 .date-badge--red { background: color-mix(in srgb, var(--dot-red) 15%, var(--card)); color: var(--danger); }
 .date-badge--orange { background: color-mix(in srgb, var(--dot-orange) 15%, var(--card)); color: var(--warn); }
-.date-badge--green { background: color-mix(in srgb, var(--dot-green) 15%, var(--card)); color: var(--accent-soft); }
+.date-badge--green { background: color-mix(in srgb, var(--dot-green) 15%, var(--card)); color: var(--verde); }
 .date-badge--blue { background: color-mix(in srgb, var(--dot-blue) 15%, var(--card)); color: var(--dot-blue); }
 .quote-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .quote-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 4.6rem; gap: 8px; align-items: baseline; font-size: 0.84rem; }
@@ -403,7 +413,7 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .quote-row__chg.down { color: var(--danger); }
 .quote-row__chg.flat { color: var(--muted); }
 .notepad__status { font-size: 0.7rem; color: var(--muted); }
-.side-quote { margin: 0; padding: 4px 0 0 12px; border-left: 3px solid var(--accent-soft); }
+.side-quote { margin: 0; padding: 4px 0 0 12px; border-left: 3px solid var(--accent-bright); }
 .side-quote p { white-space: pre-line; font-size: 0.9rem; line-height: 1.5; font-style: italic; }
 .side-quote footer { margin-top: 6px; font-size: 0.72rem; color: var(--muted); }
 .notepad__toolbar { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; }
