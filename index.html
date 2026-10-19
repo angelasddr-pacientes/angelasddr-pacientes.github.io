@@ -45,10 +45,10 @@
   --accent-glow: rgba(27, 67, 50, 0.14);
   --on-accent: #ffffff;
   --text: #1a1f1c;
-  --muted: #4b5563;
+  --muted: #5a636e;
   --border: #d8e0db;
   --today-bg: rgba(27, 67, 50, 0.08);
-  --other-month: #9ca3af;
+  --other-month: #9aa3ad;
   --danger: #b91c1c;
   --danger-soft: #fee2e2;
   --warn: #b45309;
@@ -67,8 +67,8 @@
   color-scheme: light;
 }
 
-/* Creme: the Agenda do André's "dark" theme is a light beige one (vidro-liquido.css);
-   text, accent and LED colors stay those of the light theme. */
+/* Creme: the Agenda do André's "dark" theme is a light beige one (vidro-liquido.css), with its own
+   gray and border (vps/public/index.html); text, accent and LED colors stay those of the light theme. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #f6eedd;
@@ -79,6 +79,8 @@
     --card: rgba(255, 252, 244, 0.62);
     --glass: rgba(255, 252, 244, 0.55);
     --glass-solid: rgba(255, 252, 244, 0.92);
+    --muted: #505862;
+    --border: #d3c5ab;
   }
 }
 
@@ -91,6 +93,8 @@
   --card: rgba(255, 252, 244, 0.62);
   --glass: rgba(255, 252, 244, 0.55);
   --glass-solid: rgba(255, 252, 244, 0.92);
+  --muted: #505862;
+  --border: #d3c5ab;
 }
 
 /* Comfortable base size for all-day use; a step larger on big screens. */
