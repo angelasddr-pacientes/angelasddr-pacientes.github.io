@@ -267,7 +267,10 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .entry-chip { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 0.78rem; cursor: pointer; text-align: left; width: 100%; min-width: 0; overflow: hidden; }
 .entry-chip > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-chip:hover { border-color: var(--accent); }
-.entry-chip__time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.entry-chip__time { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* With start and end times the name goes to its own line, so neither is cut in narrow columns. */
+.entry-chip { flex-wrap: wrap; row-gap: 2px; }
+.entry-chip > span:last-child { flex: 1 1 100%; }
 .free-list { list-style: none; margin: 0; padding: 6px 8px; border: 1px dashed var(--border); border-radius: 8px; font-size: 0.74rem; color: var(--accent-bright); }
 .free-list li + li { margin-top: 2px; }
 .gaps { padding: 12px 14px; background: var(--surface-2); border: 1px dashed var(--border); border-radius: var(--radius-sm); font-size: 0.88rem; }
@@ -1308,7 +1311,10 @@ function freeSlots(date, dayEntries, settings) {
 
 const freeCapacity = (slots) => slots.reduce((total, slot) => total + slot.capacity, 0);
 
-return { ENTRY_KIND, scheduledSlotsOn, buildAgenda, freeSlots, freeCapacity };
+/** When a session starts and ends ("14:00–14:50"), from its start time and the session length; '' without a time. */
+const sessionTimeRange = (time, settings) => (time ? `${time}–${timeOf(minutesOf(time) + settings.sessionMinutes)}` : '');
+
+return { ENTRY_KIND, scheduledSlotsOn, buildAgenda, freeSlots, freeCapacity, sessionTimeRange };
 })();
 modules["domain/signals.js"] = (() => {
 const { isLateNotice } = modules["domain/billing-policy.js"];
@@ -5408,7 +5414,7 @@ const focusKey = (entry, field) => `${entry.patientId}|${entry.date}|${field}`;
 return { applyEntryChange, updateEntry, markEntry, focusKey };
 })();
 modules["ui/agenda-calendar.js"] = (() => {
-const { buildAgenda, freeCapacity, freeSlots } = modules["domain/schedule.js"];
+const { buildAgenda, freeCapacity, freeSlots, sessionTimeRange } = modules["domain/schedule.js"];
 const { DATE_KIND, DATE_KIND_LABELS, datesOn } = modules["domain/calendar-dates.js"];
 const { attendanceSignal, daySignal, paymentSignal } = modules["domain/signals.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
@@ -5530,7 +5536,7 @@ function dayBody(app, date, entries, rerender) {
             h(
               'li',
               {},
-              h('strong', {}, entry.time || 'sem horário'),
+              h('strong', {}, sessionTimeRange(entry.time, settings) || 'sem horário'),
               h('span', {}, patientName(app, entry)),
               signalLabel(attendanceSignal(entry, settings, app.today)),
               h(
@@ -5600,7 +5606,7 @@ function monthGrid(app) {
           ),
           dateTags(dates),
           dayEntries.slice(0, MAX_ENTRIES_IN_CELL).map((entry) =>
-            h('span', { class: 'day-entry' }, signalDots(attendanceSignal(entry, settings, app.today)), h('span', {}, [entry.time, firstName(app, entry)].filter(Boolean).join(' '))),
+            h('span', { class: 'day-entry' }, signalDots(attendanceSignal(entry, settings, app.today)), h('span', {}, [sessionTimeRange(entry.time, settings), firstName(app, entry)].filter(Boolean).join(' '))),
           ),
           dayEntries.length > MAX_ENTRIES_IN_CELL ? h('span', { class: 'day-more' }, `+${dayEntries.length - MAX_ENTRIES_IN_CELL}`) : null,
           capacity ? h('span', { class: 'day-free' }, `${capacity} ${capacity === 1 ? 'vaga' : 'vagas'}`) : null,
@@ -5636,7 +5642,7 @@ function weekColumns(app, entries) {
             'button',
             { type: 'button', class: 'entry-chip', onClick: () => (entry.session ? openSessionForm(app, { session: entry.session }) : openDayPanel(app, date)) },
             signalDots(attendanceSignal(entry, settings, app.today)),
-            entry.time ? h('span', { class: 'entry-chip__time' }, entry.time) : null,
+            entry.time ? h('span', { class: 'entry-chip__time' }, sessionTimeRange(entry.time, settings)) : null,
             h('span', {}, firstName(app, entry)),
           ),
         ),
