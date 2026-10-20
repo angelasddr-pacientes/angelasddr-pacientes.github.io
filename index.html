@@ -646,6 +646,20 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
   }
 }
 
+/* —— Manual (button "Manual" at the top): large, plain reading, one subject per card, printable —— */
+.manual { max-width: 56rem; }
+.manual .page-title { font-size: 1.7rem; }
+.manual-section, .manual-toc { font-size: 1.12rem; line-height: 1.6; }
+.manual-section p { margin: 0 0 12px; }
+.manual-steps, .manual-list { margin: 0 0 14px; padding-left: 1.6em; display: flex; flex-direction: column; gap: 8px; }
+.manual-toc ol { margin: 0; padding-left: 1.6em; columns: 16rem 3; column-gap: 32px; }
+.manual-toc li { break-inside: avoid; padding: 2px 0; }
+/* top: a title on two lines keeps its number on the first one. */
+.manual-toc .link { font-size: 1.08rem; padding: 4px 0; min-height: 36px; vertical-align: top; }
+.manual-tip { background: var(--today-bg); border-left: 5px solid var(--accent); border-radius: var(--radius-sm); padding: 10px 14px; }
+.manual-leds { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.manual-leds li { display: flex; align-items: center; gap: 12px; }
+
 /* —— Depth (3D), pedido do usuário de 19/10 ——
    Light from above, as on a real object: raised things have a bright top edge, a darker bottom edge
    and a layered shadow (contact + soft); fields, the selected choice and the LED pills are sunk into
@@ -706,12 +720,23 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 
 @media print {
   .tabs, .toolbar, .agenda-bar .btn, .btn, .legend, .side-panel, #sessionBar, .pending-card { display: none !important; }
+  /* The manual on paper: no app header, black on white, 12 pt, a subject never split before its steps. */
+  body[data-view="manual"] .header, body[data-view="manual"] #backupBanner, body[data-view="manual"] .topbar { display: none !important; }
+  .manual { max-width: none; font-size: 12pt; color: #000; }
+  .manual .card { border: none; padding: 0; background: none; }
+  .manual-section { break-before: auto; margin-top: 14pt; }
+  .manual-section .card-title { break-after: avoid; font-size: 15pt; }
+  .manual-steps li, .manual-list li, .manual-tip, .manual-leds li { break-inside: avoid; }
+  .manual-tip { border: 1pt solid #888; border-left-width: 4pt; background: none; }
+  .manual-toc .link { color: #000; text-decoration: none; }
   .topbar { position: static; box-shadow: none; border: none; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .shell { display: block; }
   body { background: #fff; }
   .card, .cal-wrap { box-shadow: none; }
   /* On paper a blinking LED would come out at whatever brightness it had at that instant. */
   .dot-signals .geo-dot { animation: none !important; opacity: 1; }
+  /* Browsers leave background colours out of print unless asked: the LEDs are background colour. */
+  .dot-signals, .geo-dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 /* Problems next to the field they are about, and the live check of a day and time (Agendar, Remarcar). */
 .field-error { margin: 2px 0 0; color: var(--danger); font-size: 0.95rem; font-weight: 600; }
@@ -4917,7 +4942,7 @@ function appearanceCard() {
       { class: 'muted' },
       systemReducesMotion()
         ? 'Este computador está pedindo para reduzir animações. Sem a opção acima, os LEDs ficam parados (como na Agenda Digital). No Windows: Configurações › Acessibilidade › Efeitos visuais › Efeitos de animação.'
-        : 'Este computador não pede para reduzir animações: todos os LEDs piscam, acendendo e apagando da esquerda para a direita, como na Agenda do André. Vermelho, laranja e verde piscam a cada 0,8 s; amarelo, azul e cinza, mais devagar (a cada 1,6 s) e com luz mais forte.',
+        : 'Este computador não pede para reduzir animações: todos os LEDs piscam como luzes de avião. Verde e azul (ativo, confirmado, pago): 2 pontos a cada 0,8 s, um logo depois do outro (Airbus). Vermelho, laranja, amarelo e cinzas: 1 ponto a cada 1,6 s, como uma explosão (Boeing).',
     ),
   );
 }
@@ -8349,6 +8374,366 @@ function renderPatients(app) {
 
 return { renderPatients };
 })();
+modules["ui/manual-content.js"] = (() => {
+// The manual of the Controle Clínico for the psychologist (button "Manual" at the top; printable).
+// Rule of the project (docs/LOG-SESSAO.md, section 2): every update of the system updates this text in
+// the same commit, with the words on the screen, and the date below. tests/manual.test.mjs checks the
+// tabs, the buttons at the top, the buttons of "Sessões de hoje" and the LED colours.
+// Blocks: { p } paragraph, { steps } numbered steps, { list } bullets, { tip } highlighted note,
+// { leds } the LED legend drawn with the real LEDs. **text** is shown in bold (names on the screen).
+
+const MANUAL_UPDATED = '2026-10-20';
+
+const MANUAL = [
+  {
+    id: 'comecar',
+    title: 'Para começar',
+    blocks: [
+      { p: 'O Controle Clínico guarda a agenda, as presenças e faltas, os valores e os pagamentos do consultório. Ele substitui a planilha: o que aconteceu até a importação veio dela; daqui em diante, tudo é registrado aqui.' },
+      { p: 'Abra o endereço do sistema no navegador. Na primeira vez em cada aparelho, toque em **Entrar com Google** e escolha a sua conta. Os registros ficam guardados na sua conta e aparecem iguais no computador, no iPad e no celular.' },
+      { p: 'Não existe um botão "Salvar" geral: cada coisa que você marca já fica guardada. Sem internet, o sistema continua funcionando e envia tudo quando a internet voltar.' },
+      { p: 'No alto da tela ficam os botões **Hoje**, **Caderno e informações**, **Tema claro/creme**, **Manual** e **Imprimir**. Logo abaixo ficam as abas **Painel geral**, **Pacientes**, **Fechamento do mês**, **Financeiro**, **Indicadores** e **Configurações**. As abas ficam sempre no alto, mesmo quando a página desce.' },
+      { p: 'Toda janela tem o botão **Fechar** no canto; a tecla **Esc** também fecha. Depois de cada ação aparece, embaixo à direita, uma mensagem curta confirmando o que foi feito.' },
+      { tip: 'Na dúvida, toque em **Hoje**: ele volta para o Painel geral, com a agenda no dia de hoje.' },
+    ],
+  },
+  {
+    id: 'botoes-do-alto',
+    title: 'Os botões do alto da tela',
+    blocks: [
+      {
+        list: [
+          '**Hoje**: volta para o Painel geral, com a agenda no dia de hoje.',
+          '**Caderno e informações**: abre ou fecha o painel do lado direito (datas do dia, frase do dia, caderno de borrão).',
+          '**Tema claro/creme**: troca o fundo entre o claro e o creme. Use o que for mais confortável para os olhos.',
+          '**Manual**: abre este manual.',
+          '**Imprimir**: imprime a tela que está aberta, sem os botões e os menus.',
+        ],
+      },
+      { p: 'Ao lado desses botões fica o aviso da nuvem, com uma luz:' },
+      {
+        list: [
+          '**Salvo na nuvem** (azul): tudo guardado.',
+          '**Salvando…** (verde): enviando o que acabou de ser feito.',
+          '**Sem internet: salvo neste aparelho** (laranja): está guardado aqui e vai para a nuvem quando a internet voltar.',
+          '**Entrar** (amarelo): toque para entrar com a conta Google.',
+          '**Sem acesso** ou **Erro ao salvar na nuvem** (vermelho): toque no aviso e veja Configurações; se continuar, avise o André.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'painel',
+    title: 'Painel geral: as sessões de hoje',
+    blocks: [
+      { p: 'O **Painel geral** mostra só o que se usa todo dia, nesta ordem: **Sessões de hoje**, **Pendências** e a agenda.' },
+      { p: 'Em **Sessões de hoje**, cada paciente do dia aparece com o horário (por exemplo, 14:00–14:50), o nome, a luz com a situação e os botões:' },
+      {
+        list: [
+          '**Iniciar sessão**: começa a contar o tempo da sessão.',
+          '**Realizada**: a sessão aconteceu.',
+          '**Falta**: o paciente não veio.',
+          '**Desmarcou**: o paciente desmarcou.',
+          '**Remarcar**: muda a data ou o horário só dessa sessão.',
+          '**Editar**: aparece depois que a sessão foi registrada; abre a sessão para corrigir ou completar.',
+          '**Paga**: caixa que aparece quando a sessão tem valor; marque quando receber.',
+        ],
+      },
+      { tip: 'Os botões **Falta** e **Desmarcou** registram na hora, sem perguntar nada. A falta fica como "sem aviso" e é cobrada; a desmarcação fica como "com antecedência" e não é cobrada. Se o paciente avisou, informe quando em **Editar** (veja "Faltas e desmarcações").' },
+      { p: 'Sem sessões hoje, aparece **Nenhuma sessão hoje.** e o próximo dia que tem sessão.' },
+    ],
+  },
+  {
+    id: 'pendencias',
+    title: 'Pendências',
+    blocks: [
+      { p: 'O cartão **Pendências** só aparece quando há algo para resolver. Cada linha tem um botão que abre só aquilo:' },
+      {
+        list: [
+          '**Informar**: pacientes sem dia e horário. Para cada um, escolha o dia, o horário e toque em **Salvar**. Quem vem mais de uma vez por semana: toque em **+** e aparece mais uma linha. Se a pessoa não tem dia fixo, toque em **Não tem dia fixo**.',
+          '**Conferir**: confira o início e o fim do expediente e a **Duração da sessão (min)**, e toque em **Está certo, salvar**.',
+          '**Registrar**: sessões que já passaram e não foram registradas. Para cada uma, toque no que aconteceu: **Realizada**, **Falta**, **Desmarcou**, **Não houve sessão** ou **Remarcar**.',
+          '**Decidir**: depósitos do extrato que o sistema não sabe de quem são. Leva ao Financeiro (veja "Financeiro").',
+        ],
+      },
+      { tip: 'Algumas sessões antigas foram previstas pelo histórico da planilha e podem não ter existido. Nesses casos, toque em **Não houve sessão**.' },
+    ],
+  },
+  {
+    id: 'cronometro',
+    title: 'O tempo da sessão (cronômetro)',
+    blocks: [
+      { p: 'No horário de cada sessão, o sistema pergunta: **Começar a contar o tempo agora?** Toque em **Começar agora** para contar, ou em **Agora não**. Também dá para começar pelo botão **Iniciar sessão**.' },
+      { p: 'Com a sessão em andamento, uma faixa escura no alto, em todas as telas, mostra o nome, a hora em que começou, o tempo e o botão **Encerrar sessão**.' },
+      { p: 'Ao chegar à duração da sessão, abre a janela **O tempo da sessão acabou**, com os botões **Encerrar sessão** e **Continuar a sessão**. A faixa fica cor de âmbar e o tempo continua contando.' },
+      { steps: [
+        'Quando terminar, toque em **Encerrar sessão**.',
+        'Toque em **Encerrar e marcar como realizada** (ou em **Só encerrar**, ou em **Voltar** para continuar).',
+      ] },
+      { tip: 'O cronômetro não começa nem para sozinho e não faz som, para não interromper a sessão. Ele continua certo mesmo se a página for fechada e aberta de novo, no mesmo aparelho.' },
+    ],
+  },
+  {
+    id: 'agenda',
+    title: 'A agenda',
+    blocks: [
+      { p: 'A agenda fica no Painel geral, abaixo das Pendências. Escolha como ver: **Dia**, **Semana**, **Mês** ou **Período**. As setas **‹** e **›** passam para o anterior e o próximo; **Hoje** volta para hoje. Logo abaixo fica a legenda das luzes.' },
+      { p: 'No **Mês**, cada dia mostra: o número de atendimentos (no círculo), as luzes do dia, os feriados, até 3 sessões com horário e nome, e quantas **vagas** sobram para encaixe (contadas de agora em diante).' },
+      { p: 'Na **Semana**, cada sessão é um botão com horário e nome, e os horários vagos aparecem como "Vago 08:00–10:30". O **Período** lista as vagas para encaixe entre duas datas.' },
+      { steps: [
+        'Toque num dia para abrir as sessões dele.',
+        'Na caixa **Vagos** estão os horários livres do dia.',
+        'Em cada sessão estão os botões **Realizada**, **Falta** e **Desmarcou**, a caixa **Pago** e, conforme o caso, **Remarcar** (sessão ainda em aberto) e **Editar** (sessão já registrada).',
+        'O botão **+ Encaixe / agendamento** agenda no primeiro horário vago do dia.',
+      ] },
+    ],
+  },
+  {
+    id: 'agendar',
+    title: 'Agendar uma sessão ou um encaixe',
+    blocks: [
+      { steps: [
+        'Toque em **+ Agendar / encaixe**.',
+        'Em **Paciente**, toque em **Escolha o paciente…** e escolha.',
+        'Em **Repete?**, escolha **Só esta vez (encaixe)**, **Toda semana**, **A cada 15 dias** ou **Uma vez por mês**.',
+        'Escolha a **Data** e o **Horário**, e confira o **Valor (R$)**.',
+        'Toque em **Salvar**.',
+      ] },
+      { p: 'Ao escolher o dia e o horário, o sistema confere na hora: aparece **✓ Horário livre.** ou o nome de quem já está naquele horário, com os horários livres mais próximos como botões. Toque num deles para escolher. Com conflito, não salva.' },
+      { p: 'O valor vem do cadastro do paciente. Se você mudar o valor, o sistema pede o **Motivo do valor diferente do cadastro (obrigatório)**; o valor novo vale só para essa sessão e depois volta ao do cadastro.' },
+      { p: 'Com repetição, **Data** vira **A partir de**, e **Quantas vezes** (com os botões − e +) diz quantas vezes por semana. Cada vez tem a sua linha de dia, horário e valor. Salvar troca os dias fixos do paciente a partir daquela data.' },
+      { tip: 'Nos campos de motivo e de observação, escreva só o administrativo (por exemplo, "o paciente pediu para trocar o dia"), sem conteúdo clínico.' },
+    ],
+  },
+  {
+    id: 'remarcar',
+    title: 'Remarcar uma sessão',
+    blocks: [
+      { steps: [
+        'Na sessão, toque em **Remarcar**.',
+        'Escolha a **Nova data** e o **Novo horário**.',
+        'Escreva **Por que mudou? (obrigatório)**.',
+        'Toque em **Salvar**.',
+      ] },
+      { p: 'Só essa sessão muda; os outros dias do paciente continuam iguais. O sistema confere se o novo horário está livre, como no agendamento. A sessão remarcada mostra de onde veio e o motivo.' },
+    ],
+  },
+  {
+    id: 'faltas',
+    title: 'Faltas e desmarcações',
+    blocks: [
+      { p: '**Falta** e **Desmarcou** registram na hora. Para dizer se e quando o paciente avisou:' },
+      { steps: [
+        'Toque em **Editar** na sessão.',
+        'Em **Como avisou**, escolha a opção (por exemplo, **Avisou em cima da hora** ou **Não avisou**).',
+        'Em **Aviso recebido em**, informe a data e a hora do aviso. O sistema mostra quantas horas antes da sessão foi e se cobra.',
+        'Confira o **Valor (R$)**: ele segue a sugestão da política de faltas até você digitar outro.',
+        'Toque em **Salvar**.',
+      ] },
+      { p: 'A regra de cobrança fica em Configurações: cobra a falta ou desmarcação avisada com menos horas que o prazo (o padrão é 24 horas). Falta sem aviso é sugerida como cobrada. O valor pode sempre ser mudado.' },
+    ],
+  },
+  {
+    id: 'editar-sessao',
+    title: 'Editar uma sessão',
+    blocks: [
+      { p: 'O botão **Editar** abre a sessão. Ali dá para mudar a **Data**, o **Horário**, a **Situação** (Agendada, Realizada, Falta, Desmarcada (paciente), Desmarcada (profissional), Sem sessão (feriado/férias)…), o valor, a **Data do pagamento** e a caixa **Sessão paga**, e a **Observação**.' },
+      { p: 'Para apagar uma sessão registrada por engano, toque em **Excluir** e confirme. Isso não pode ser desfeito.' },
+    ],
+  },
+  {
+    id: 'pagamentos',
+    title: 'Pagamentos',
+    blocks: [
+      { list: [
+        'Uma sessão: marque a caixa **Paga** (ou **Pago**, no painel do dia).',
+        'Vários meses ou um valor que cobre várias sessões: na ficha do paciente, toque em **Registrar pagamento**. Informe a data, o **Valor (R$)** e a **Forma / banco**, e marque para dar baixa nas sessões em aberto.',
+        'O mês de um paciente: em **Fechamento do mês**, toque em **Receber** na linha dele.',
+      ] },
+    ],
+  },
+  {
+    id: 'pacientes',
+    title: 'Pacientes',
+    blocks: [
+      { p: 'A aba **Pacientes** lista cada paciente com a situação (**Ativo** ou **Inativo**), os dias e horários fixos, o valor, o histórico, a última e a próxima sessão e o que está **Em aberto**. Use **Buscar paciente…** para achar alguém e o filtro para ver **Ativos**, **Inativos / encerrados** ou **Todos**.' },
+      { p: 'Os dias, horários e o valor podem ser mudados direto na linha. Use **− N vezes por semana +** para mudar quantas vezes por semana, ajuste o dia e o horário de cada linha e a frequência (**Semanal**, **Quinzenal**, **Mensal** ou **Avulsa**). O **×** tira um dia. Se o horário já é de outro paciente, não salva e mostra os horários livres.' },
+      { steps: [
+        'Para um paciente novo, toque em **Cadastrar**.',
+        'Preencha **Nome**, **Valor da sessão (R$)**, a frequência e os **Dias e horários de atendimento**.',
+        'Toque em **Salvar**.',
+      ] },
+      { p: 'Tocar no nome abre a ficha do paciente, com as sessões mês a mês, os pagamentos e os botões **Editar cadastro**, **Registrar pagamento**, **+ Sessão** e **Unificar com…** (para juntar dois cadastros da mesma pessoa).' },
+      { tip: 'Em **Observações administrativas** não registre conteúdo clínico: o prontuário tem regras próprias do CFP.' },
+    ],
+  },
+  {
+    id: 'fechamento',
+    title: 'Fechamento do mês',
+    blocks: [
+      { p: 'A aba **Fechamento do mês** abre o **Painel consolidado** do mês escolhido: para cada paciente, as sessões realizadas, faltas, desmarcações, o valor do mês, o que está sem pagamento, o recebido e a situação (**Pago**, **Parcial**, **Em aberto** ou **Sem cobrança**).' },
+      { list: [
+        '**Receber**: registra o pagamento do mês daquele paciente e marca as sessões como pagas.',
+        '**Sessões**: mostra as sessões do mês daquele paciente, para corrigir uma por uma.',
+        'A caixa de **Recibo** marca se o recibo foi emitido no Receita Saúde.',
+      ] },
+      { p: 'Mais abaixo, **Todos os atendimentos** do mês ficam numa lista para editar um por um, inclusive quando o paciente avisou.' },
+    ],
+  },
+  {
+    id: 'financeiro',
+    title: 'Financeiro',
+    blocks: [
+      { p: 'A aba **Financeiro** mostra, no período escolhido (**Mês**, **Ano** ou **Todo o histórico**), o **Valor das sessões**, o **Recebido** e a **Diferença**; o que há **A receber** por paciente; a **Previsão de recebimentos**; e os recebimentos mês a mês, base para o Carnê-Leão.' },
+      { p: 'Em **Depósitos do extrato aguardando sua decisão** ficam os depósitos que o sistema não sabe de quem são. Eles ficam fora de todos os totais até você decidir:' },
+      { list: [
+        'escolher o paciente e tocar em **Atribuir** (os próximos depósitos com esse nome vão sozinhos para ele);',
+        '**Criar paciente**;',
+        '**Já está na ficha**, se o pagamento já tinha sido lançado;',
+        '**Não é de paciente**, se não for pagamento de sessão.',
+      ] },
+    ],
+  },
+  {
+    id: 'indicadores',
+    title: 'Indicadores',
+    blocks: [
+      { p: 'A aba **Indicadores** abre a **Visão geral** do período: recebido, valor das sessões, sessões realizadas (com a taxa de presença), faltas e desmarcações, gráficos dos últimos 12 meses e os pacientes com sessões cobradas sem pagamento registrado.' },
+    ],
+  },
+  {
+    id: 'leds',
+    title: 'As luzes (LEDs)',
+    blocks: [
+      { p: 'Cada sessão tem uma pequena luz colorida que pisca. A cor diz a situação; ao lado, o texto diz o mesmo em palavras (por exemplo, "Falta sem aviso, cobrada" ou "Desmarcou em cima da hora").' },
+      { leds: true },
+      { list: [
+        'Verde e azul (agendada, realizada, paga, paciente ativo): **2 pontos** que piscam um logo depois do outro, como as luzes de um avião Airbus.',
+        'Vermelho, laranja, amarelo, cinza e cinza escuro (alertas, sem confirmação ou fora de atividade): **1 ponto** que pisca mais devagar, como as luzes de um avião Boeing.',
+        'Na lista de pacientes: verde é **Ativo** e cinza é **Inativo**. No pagamento: azul é **Pago**, amarelo é **Em aberto**, cinza é **Sem cobrança**.',
+      ] },
+      { tip: 'Se as luzes piscando incomodarem, em **Configurações**, no cartão **Aparência**, desmarque a opção de manter os LEDs piscando: eles passam a seguir o computador, que pode pedir menos movimento.' },
+    ],
+  },
+  {
+    id: 'lateral',
+    title: 'Caderno e informações (painel do lado direito)',
+    blocks: [
+      { p: 'O botão **Caderno e informações** abre o painel com: **Hoje** (a data, quantos dias faltam para o fim do ano e as datas dos próximos 45 dias), **Frase do dia**, **Caderno de borrão**, **Câmbio**, **Bolsa (B3)** e **Curiosidades do dia**.' },
+      { p: 'O **Caderno de borrão** é para recados, ideias e pendências do dia. Ele salva sozinho enquanto você escreve e tem botões de negrito, itálico, sublinhado, riscado, título, listas, marca-texto e cor. **Baixar .txt** guarda uma cópia; **Limpar** apaga tudo (pergunta antes).' },
+    ],
+  },
+  {
+    id: 'configuracoes',
+    title: 'Configurações',
+    blocks: [
+      { list: [
+        '**Consultório, expediente e política de faltas**: nome, CRP, o prazo para cobrar falta ou desmarcação (em horas), o início e o fim do expediente, a **Duração da sessão (min)**, o intervalo (por exemplo, o almoço) e os dias de atendimento. Toque em **Salvar**.',
+        '**Datas e informações do painel lateral**: cadastre feriados do estado e da cidade, férias e datas suas, com **Adicionar data**.',
+        '**Aparência**: a opção de manter os LEDs piscando.',
+        '**Nuvem**: mostra a conta em uso. **Sair e apagar os dados deste aparelho** sai da conta só neste aparelho; os dados continuam na nuvem.',
+        '**Backup**: **Exportar backup** baixa uma cópia de todos os registros num arquivo; guarde-a num lugar seguro de vez em quando.',
+        '**Planilha antiga**: veja o próximo assunto.',
+      ] },
+      { tip: 'Os feriados e as datas "sem atendimento" aparecem na agenda, mas não apagam as sessões previstas. Depois do dia, elas aparecem em **Pendências** › **Registrar**: toque em **Não houve sessão**.' },
+      { tip: '**Restaurar backup** substitui TODOS os dados atuais pelos do arquivo. Use só se o André pedir.' },
+    ],
+  },
+  {
+    id: 'planilha',
+    title: 'Planilha antiga',
+    blocks: [
+      { p: 'Em Configurações, o botão **Ver a conferência da planilha** abre a página **Planilha antiga**: de onde vieram os pacientes, as sessões e os valores até a importação, e o que ficou para conferir.' },
+      { p: 'Importar a planilha de novo apaga o que foi registrado no sistema depois da importação. Por isso o botão só funciona depois de marcar **Entendo que isso apaga o que foi registrado no sistema.** Não é preciso importar de novo para usar o sistema.' },
+    ],
+  },
+  {
+    id: 'imprimir',
+    title: 'Imprimir',
+    blocks: [
+      { p: 'O botão **Imprimir** do alto imprime a tela aberta, sem os botões, os menus e o painel lateral; as luzes saem acesas. Para imprimir este manual, toque em **Imprimir o manual**, no começo desta página.' },
+    ],
+  },
+  {
+    id: 'problemas',
+    title: 'Se algo der errado',
+    blocks: [
+      { list: [
+        '**Sem internet. Conecte este aparelho à internet para carregar os dados.**: conecte e toque em **Tentar de novo**.',
+        '**A conta … não tem acesso a estes dados.**: toque em **Entrar com outra conta Google** e escolha a sua conta.',
+        '**A nuvem ainda está sem os dados do consultório.**: avise o André antes de tocar em **Restaurar backup**.',
+        '**Não foi possível salvar neste navegador…**: vá a Configurações, toque em **Exportar backup** e avise o André.',
+      ] },
+      { p: 'Em qualquer outra dúvida, anote o que apareceu na tela (ou tire uma foto) e mande para o André.' },
+    ],
+  },
+];
+
+return { MANUAL_UPDATED, MANUAL };
+})();
+modules["ui/views/manual.js"] = (() => {
+const { formatDate } = modules["lib/dates.js"];
+const { SIGNAL_LEGEND } = modules["domain/signals.js"];
+const { MANUAL, MANUAL_UPDATED } = modules["ui/manual-content.js"];
+const { button, card, pageHeader, signalDots } = modules["ui/components.js"];
+const { h } = modules["ui/dom.js"];
+/** Text with **bold** parts (button and screen names), always as text nodes. */
+function rich(text) {
+  return text.split('**').map((part, index) => (index % 2 ? h('strong', {}, part) : part));
+}
+
+// The LED legend drawn with the real LEDs, so the manual shows what the screen shows (lit on paper).
+const ledLegend = () =>
+  h(
+    'ul',
+    { class: 'manual-leds' },
+    SIGNAL_LEGEND.map(([tone, label]) => h('li', {}, signalDots({ tone }), h('span', {}, label))),
+  );
+
+function block(item) {
+  if (item.p) return h('p', {}, rich(item.p));
+  if (item.steps) return h('ol', { class: 'manual-steps' }, item.steps.map((step) => h('li', {}, rich(step))));
+  if (item.list) return h('ul', { class: 'manual-list' }, item.list.map((entry) => h('li', {}, rich(entry))));
+  if (item.tip) return h('p', { class: 'manual-tip' }, rich(item.tip));
+  if (item.leds) return ledLegend();
+  return null;
+}
+
+const sectionId = (section) => `manual-${section.id}`;
+const goTo = (section) => document.getElementById(sectionId(section))?.scrollIntoView({ block: 'start' });
+
+/** The user's manual: what each screen is for and how to do each task, printable. */
+function renderManual(app) {
+  return h(
+    'div',
+    { class: 'stack manual' },
+    pageHeader(
+      'Manual do Controle Clínico',
+      `Como usar o sistema, passo a passo. Atualizado em ${formatDate(MANUAL_UPDATED)}.`,
+      button('Imprimir o manual', { onClick: () => window.print() }),
+      button('‹ Voltar para o Painel geral', { variant: 'ghost', onClick: () => app.setUi({ view: 'painel' }) }),
+    ),
+    card(
+      { class: 'manual-toc' },
+      h('h3', { class: 'card-title' }, 'Assuntos'),
+      h(
+        'ol',
+        {},
+        MANUAL.map((section) => h('li', {}, h('button', { type: 'button', class: 'link', onClick: () => goTo(section) }, section.title))),
+      ),
+    ),
+    MANUAL.map((section, index) =>
+      card(
+        { class: 'manual-section', id: sectionId(section) },
+        h('h3', { class: 'card-title' }, `${index + 1}. ${section.title}`),
+        section.blocks.map(block),
+      ),
+    ),
+  );
+}
+
+return { renderManual };
+})();
 modules["ui/led-sync.js"] = (() => {
 // Keeps every LED strip blinking in step, as in the Agenda do André: a strip drawn later (another view,
 // the session bar, the backup status) joins the cycle the others are in instead of starting its own.
@@ -9002,6 +9387,7 @@ const { renderHub } = modules["ui/views/hub.js"];
 const { renderMonthly } = modules["ui/views/monthly.js"];
 const { renderOverview } = modules["ui/views/overview.js"];
 const { renderPatients } = modules["ui/views/patients.js"];
+const { renderManual } = modules["ui/views/manual.js"];
 const { BACKUP_STATE, createFileBackup } = modules["infra/file-backup.js"];
 const { backupSnapshot, refreshBackupStatus, reconnectBackup, renderBackupIndicator } = modules["ui/backup-status.js"];
 const { NOTEPAD_SAVED_EVENT } = modules["ui/notepad.js"];
@@ -9021,6 +9407,8 @@ const VIEWS = [
   // reached from Configurações (decision of 19/10/2026).
   { id: 'importar', label: 'Planilha antiga', render: renderImport, parent: 'configuracoes' },
   { id: 'configuracoes', label: 'Configurações', render: renderSettings },
+  // Reached from the "Manual" button at the top, not a tab.
+  { id: 'manual', label: 'Manual', render: renderManual, menu: false },
 ];
 
 const THEME_KEY = 'controle-clinico/tema';
@@ -9071,6 +9459,7 @@ function renderToolbar(app) {
     button('Hoje', { onClick: () => app.setUi({ view: 'painel', agendaDate: app.today }) }),
     h('button', { type: 'button', id: 'sideToggle', class: 'btn btn--secondary', 'aria-controls': 'side', 'aria-expanded': String(readSideOpen()), onClick: () => toggleSide() }, 'Caderno e informações'),
     button('Tema claro/creme', { variant: 'secondary', onClick: toggleTheme }),
+    button('Manual', { variant: 'secondary', onClick: () => app.setUi({ view: 'manual' }) }),
     button('Imprimir', { variant: 'secondary', onClick: () => window.print() }),
   ];
 }
@@ -9078,7 +9467,7 @@ function renderToolbar(app) {
 function renderNav(app) {
   if (isLocked(app)) return [];
   const current = VIEWS.find((view) => view.id === app.ui.view)?.parent ?? app.ui.view;
-  return VIEWS.filter((view) => !view.parent).map((view) =>
+  return VIEWS.filter((view) => !view.parent && view.menu !== false).map((view) =>
     h(
       'button',
       {
@@ -9191,6 +9580,8 @@ function start() {
   const render = () => {
     const focusedKey = document.activeElement?.dataset?.focusKey ?? null;
     document.body.classList.toggle('cloud-locked', isLocked(app));
+    // Print rules per screen (the manual prints without the app's header).
+    document.body.dataset.view = app.ui.view;
     replaceChildren(nav, renderNav(app));
     replaceChildren(main, renderView(app));
     side.update();
