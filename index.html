@@ -279,6 +279,16 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; background: var(--card); padding: 3px; }
 .segmented button { border: none; background: none; padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
 .segmented button.is-active { background: var(--accent); color: var(--on-accent); }
+/* Many choices: the buttons go on to the next line instead of out of the screen. */
+.segmented--wrap { display: flex; flex-wrap: wrap; border-radius: 22px; gap: 2px; }
+.segmented--wrap button { font-size: 0.95rem; padding: 9px 16px; min-height: 44px; }
+/* Financeiro › Relatório de pacientes. */
+.report-choice { display: grid; gap: 6px; margin: 10px 0; }
+.report-choice__label, .report-inline > span { font-weight: 600; }
+.report-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.report-dates { margin: 12px 0; gap: 16px 28px; }
+.input--day { width: 5rem; }
+.report-overdue { font-weight: 700; }
 .nav-period { display: flex; align-items: center; gap: 8px; flex: 1 1 18rem; justify-content: center; }
 .nav-period__label { font-weight: 700; font-size: 1.05rem; text-align: center; min-width: 14rem; }
 .btn-icon { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border); background: var(--card); font-size: 1.2rem; cursor: pointer; }
@@ -604,8 +614,8 @@ body.cloud-locked .shell, body.cloud-locked.side-open .shell { grid-template-col
   .table, .table tbody, .table tfoot, .table tr, .table td, .table th { display: block; width: 100%; }
   .table tr { padding: 8px 4px; border-bottom: 1px solid var(--border); }
   .table td, .table th { border: none; padding: 3px 4px; }
-  .table td[data-label]::before { content: attr(data-label); display: block; font-size: 0.68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
-  .table td.num { text-align: left; }
+  .table td[data-label]::before, .table tfoot th[data-label]::before { content: attr(data-label); display: block; font-size: 0.68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .table td.num, .table tfoot th.num { text-align: left; }
   .table .actions { text-align: left; }
   .table .input--fee { width: 100%; text-align: left; }
   .week-grid { grid-template-columns: minmax(0, 1fr); }
@@ -1041,13 +1051,31 @@ const isBillingNote = (text) => BILLING_NOTE_PATTERN.test(normalizeText(text));
 return { ATTENDANCE, ATTENDANCE_LABELS, NOTICE, NOTICE_LABELS, PUNCTUALITY, PUNCTUALITY_LABELS, SCHEDULED_STATUSES, classifyAttendance, isPaymentNote, deriveNotice, isBillingNote };
 })();
 modules["domain/patients.js"] = (() => {
-const { addDaysIso, weekdayIndex } = modules["lib/dates.js"];
+const { addDaysIso, formatDate, weekdayIndex } = modules["lib/dates.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
 const ACTIVE_WINDOW_DAYS = 90;
 const SCHEDULE_SAMPLE_SIZE = 8;
 const SCHEDULE_MIN_MATCHES = 4;
 
-const PATIENT_STATUS = Object.freeze({ AUTO: 'auto', ACTIVE: 'ativo', CLOSED: 'encerrado' });
+// CLOSED: treatment ended with discharge (alta). INACTIVE: stopped without discharge, with the
+// reason in `inactiveReason`. AUTO: active while there was a session in the last 90 days.
+const PATIENT_STATUS = Object.freeze({ AUTO: 'auto', ACTIVE: 'ativo', CLOSED: 'encerrado', INACTIVE: 'inativo' });
+
+const PATIENT_STATUS_LABELS = Object.freeze({
+  [PATIENT_STATUS.AUTO]: 'Automático',
+  [PATIENT_STATUS.ACTIVE]: 'Ativo',
+  [PATIENT_STATUS.CLOSED]: 'Inativo com alta',
+  [PATIENT_STATUS.INACTIVE]: 'Inativo sem alta',
+});
+
+/** Where the patient stands: ativo, inativo com alta or inativo sem alta (with the reason). */
+const SITUATION = Object.freeze({ ACTIVE: 'ativo', DISCHARGED: 'inativo_alta', NOT_DISCHARGED: 'inativo_sem_alta' });
+
+const SITUATION_LABELS = Object.freeze({
+  [SITUATION.ACTIVE]: 'Ativo',
+  [SITUATION.DISCHARGED]: 'Inativo com alta',
+  [SITUATION.NOT_DISCHARGED]: 'Inativo sem alta',
+});
 
 const FREQUENCY_LABELS = Object.freeze({
   semanal: 'Semanal',
@@ -1096,8 +1124,20 @@ function withFixedDays(patient, { days, from, frequency }) {
 
 function isActivePatient(patient, lastSessionDate, today) {
   if (patient.status === PATIENT_STATUS.ACTIVE) return true;
-  if (patient.status === PATIENT_STATUS.CLOSED) return false;
+  if (patient.status === PATIENT_STATUS.CLOSED || patient.status === PATIENT_STATUS.INACTIVE) return false;
   return Boolean(lastSessionDate) && lastSessionDate >= addDaysIso(today, -ACTIVE_WINDOW_DAYS);
+}
+
+/**
+ * The situation and, for "inativo sem alta", the reason. A patient who just stopped coming (automatic,
+ * no session in 90 days) has no discharge recorded, so is "sem alta" with that as the reason.
+ */
+function patientSituation(patient, isActive, lastSessionDate) {
+  if (isActive) return { key: SITUATION.ACTIVE, reason: '' };
+  if (patient.status === PATIENT_STATUS.CLOSED) return { key: SITUATION.DISCHARGED, reason: '' };
+  if (patient.status === PATIENT_STATUS.INACTIVE) return { key: SITUATION.NOT_DISCHARGED, reason: patient.inactiveReason?.trim() || 'Motivo não informado' };
+  const reason = lastSessionDate ? `Sem sessão há mais de 90 dias (a última em ${formatDate(lastSessionDate)})` : 'Nenhuma sessão registrada';
+  return { key: SITUATION.NOT_DISCHARGED, reason };
 }
 
 /** Usual weekday, only when most of the latest attended sessions fell on it. */
@@ -1130,12 +1170,14 @@ function newPatient(fields) {
     scheduleStart: null,
     scheduleInferred: false,
     status: PATIENT_STATUS.AUTO,
+    // Why the patient stopped, when "inativo sem alta" (administrative, never clinical content).
+    inactiveReason: '',
     notes: '',
     ...fields,
   };
 }
 
-return { PATIENT_STATUS, FREQUENCY_LABELS, WEEKLY_COUNT_PERIOD, MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount, withFixedDays, isActivePatient, inferUsualWeekday, newPatient };
+return { PATIENT_STATUS, PATIENT_STATUS_LABELS, SITUATION, SITUATION_LABELS, FREQUENCY_LABELS, WEEKLY_COUNT_PERIOD, MAX_WEEKLY_SESSIONS, weeklyCountText, withWeeklyCount, withFixedDays, isActivePatient, patientSituation, inferUsualWeekday, newPatient };
 })();
 modules["domain/metrics.js"] = (() => {
 const { monthOf, yearOf } = modules["lib/dates.js"];
@@ -1305,6 +1347,9 @@ function createApp({ dataset: initialDataset, today, persist }) {
     agendaDate: today,
     closingMonth: latestMonth(),
     patientFilter: 'ativos',
+    // Financeiro › Relatório de pacientes.
+    reportSituation: 'ativo',
+    reportPayment: 'todos',
     patientSearch: '',
     patientId: null,
     expandedClosing: null,
@@ -1374,6 +1419,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   workHoursConfirmed: false,
   // Unpaid charged sessions before this date are not listed as receivable (null = 90 days back).
   receivablesSince: null,
+  // The sessions of a month are due on this day of the next month (patient report: a vencer × atrasado).
+  paymentDueDay: 10,
   // Bank-statement client spelling (see clientKey) → patient id, decided by the user.
   clientAssignments: {},
   // Statement cell → 'novo' | 'repetido' | 'nao_paciente' (see DEPOSIT_DECISION).
@@ -1483,14 +1530,17 @@ function readEmbeddedDataset(documentRef = document) {
   }
 }
 
-function downloadJson(fileName, data) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+/** Saves `content` (text or bytes) as a file in the browser's downloads. */
+function downloadFile(fileName, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
   const link = Object.assign(document.createElement('a'), { href: url, download: fileName });
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-return { loadSavedDataset, saveDataset, forgetSavedDataset, readEmbeddedDataset, downloadJson };
+const downloadJson = (fileName, data) => downloadFile(fileName, JSON.stringify(data, null, 1), 'application/json');
+
+return { loadSavedDataset, saveDataset, forgetSavedDataset, readEmbeddedDataset, downloadFile, downloadJson };
 })();
 modules["domain/billing-policy.js"] = (() => {
 const { minutesOf } = modules["lib/dates.js"];
@@ -5711,7 +5761,7 @@ return { sessionNoteLines, checkFixedDay, checkPatientSlot, slotCheckBox, openSc
 modules["ui/forms.js"] = (() => {
 const { noticeHoursBefore, suggestedFee } = modules["domain/billing-policy.js"];
 const { deletePayment, deleteSession, newPayment, newSession, registerPayment, savePatient, saveSession } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, weeklyCountText } = modules["domain/patients.js"];
+const { FREQUENCY_LABELS, newPatient, PATIENT_STATUS, PATIENT_STATUS_LABELS, weeklyCountText } = modules["domain/patients.js"];
 const { ATTENDANCE, ATTENDANCE_LABELS, NOTICE_LABELS, PUNCTUALITY, PUNCTUALITY_LABELS } = modules["domain/status.js"];
 const { scheduledSlotsOn } = modules["domain/schedule.js"];
 const { formatMonth, isIsoDate, isTime, monthOf, WEEKDAY_NAMES } = modules["lib/dates.js"];
@@ -5980,6 +6030,30 @@ function scheduleRowsEditor(initialSlots, frequencyOf, checkSlot) {
   return { element, read, showCount, refreshChecks, anyTaken };
 }
 
+const REASON_HINT = 'Ex.: pausa a pedido do paciente, mudou de cidade, questões financeiras. Não registre conteúdo clínico.';
+const REASON_MISSING = 'Informe o motivo da inatividade sem alta.';
+const reasonInput = (value) => h('input', { class: 'input', value: value ?? '', maxlength: '200' });
+
+/** Asks why the patient is "inativo sem alta"; `onSave(reason)` runs only with a reason typed. */
+function openInactiveReasonDialog(patient, onSave, onCancel = () => {}) {
+  let saved = false;
+  const dialog = openDialog(`Inativo sem alta · ${patient.name}`, (close) => {
+    const form = h('form', { class: 'form', novalidate: true });
+    const input = reasonInput(patient.inactiveReason);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!showErrors(form, input.value.trim() ? [] : [REASON_MISSING])) return;
+      saved = true;
+      onSave(input.value.trim());
+      close();
+    });
+    form.append(field('Motivo da inatividade', input, REASON_HINT), formActions(close));
+    return form;
+  });
+  dialog.addEventListener('close', () => saved || onCancel());
+  dialog.querySelector('input')?.focus();
+}
+
 function openPatientForm(app, patient = null) {
   const current = patient ?? newPatient({});
   openDialog(patient ? 'Editar paciente' : 'Cadastrar paciente', (close) => {
@@ -5995,11 +6069,13 @@ function openPatientForm(app, patient = null) {
       status: select(
         [
           [PATIENT_STATUS.AUTO, 'Automático (ativo se teve sessão nos últimos 90 dias)'],
-          [PATIENT_STATUS.ACTIVE, 'Ativo'],
-          [PATIENT_STATUS.CLOSED, 'Encerrado / alta'],
+          [PATIENT_STATUS.ACTIVE, PATIENT_STATUS_LABELS[PATIENT_STATUS.ACTIVE]],
+          [PATIENT_STATUS.CLOSED, PATIENT_STATUS_LABELS[PATIENT_STATUS.CLOSED]],
+          [PATIENT_STATUS.INACTIVE, `${PATIENT_STATUS_LABELS[PATIENT_STATUS.INACTIVE]} (informar o motivo)`],
         ],
         { value: current.status },
       ),
+      inactiveReason: reasonInput(current.inactiveReason),
       notes: h('textarea', { class: 'input', rows: '2', maxlength: '500' }, current.notes),
     };
     // The patient as the form would save it, for checking each fixed day against the other patients.
@@ -6008,6 +6084,10 @@ function openPatientForm(app, patient = null) {
       checkFixedDay(app, planned(slots), { weekday: slot.weekday, time: slot.time, from: app.today }),
     );
     inputs.frequency.addEventListener('change', () => schedule.showCount());
+    const reasonField = field('Motivo da inatividade', inputs.inactiveReason, REASON_HINT);
+    const showReason = () => (reasonField.hidden = inputs.status.value !== PATIENT_STATUS.INACTIVE);
+    inputs.status.addEventListener('change', showReason);
+    showReason();
     [inputs.frequency, inputs.scheduleStart].forEach((input) => input.addEventListener('input', schedule.refreshChecks));
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -6018,6 +6098,7 @@ function openPatientForm(app, patient = null) {
         Number.isNaN(fee) && 'Valor da sessão inválido.',
         slots.some((slot) => slot.time && !isTime(slot.time)) && 'Horário inválido nos dias de atendimento.',
         schedule.anyTaken() && 'Um dos horários de atendimento já é de outro paciente: veja o aviso em vermelho nos dias e horários.',
+        inputs.status.value === PATIENT_STATUS.INACTIVE && !inputs.inactiveReason.value.trim() && REASON_MISSING,
       ].filter(Boolean);
       if (!showErrors(form, errors)) return;
       const scheduleChanged = JSON.stringify(slots) !== JSON.stringify(current.schedule);
@@ -6034,6 +6115,7 @@ function openPatientForm(app, patient = null) {
           cpf: inputs.cpf.value.trim(),
           guardian: inputs.guardian.value.trim(),
           status: inputs.status.value,
+          inactiveReason: inputs.inactiveReason.value.trim(),
           notes: inputs.notes.value.trim(),
         }),
       );
@@ -6048,6 +6130,7 @@ function openPatientForm(app, patient = null) {
       h('div', { class: 'form-grid' }, field('Telefone', inputs.phone), field('CPF (para o Receita Saúde)', inputs.cpf)),
       field('Responsável financeiro', inputs.guardian),
       field('Situação', inputs.status),
+      reasonField,
       field('Observações administrativas', inputs.notes, 'Não registre aqui conteúdo clínico: o prontuário tem regras próprias do CFP.'),
       formActions(close),
     );
@@ -6055,7 +6138,7 @@ function openPatientForm(app, patient = null) {
   });
 }
 
-return { openSessionForm, openPaymentForm, confirmDeletePayment, openPatientForm };
+return { openSessionForm, openPaymentForm, confirmDeletePayment, openInactiveReasonDialog, openPatientForm };
 })();
 modules["domain/forecast.js"] = (() => {
 const { addDaysIso, addMonths, endOfMonth, startOfMonth } = modules["lib/dates.js"];
@@ -6117,11 +6200,14 @@ function forecastMonths(dataset, indexes, today, monthsAhead = 3) {
   });
 }
 
+/** A session that is owed: it has a value and is no longer only booked (a booked one may not happen). */
+const isBillable = (session) => session.fee > 0 && session.status !== ATTENDANCE.SCHEDULED;
+
 /** Charged sessions without payment from `since` up to today, grouped by patient. */
 function receivables(dataset, since, today) {
   const byPatient = new Map();
   dataset.sessions
-    .filter((session) => session.fee > 0 && !session.paid && session.date >= since && session.date <= today)
+    .filter((session) => isBillable(session) && !session.paid && session.date >= since && session.date <= today)
     .forEach((session) => {
       const row = byPatient.get(session.patientId) ?? { patientId: session.patientId, sessions: 0, amount: 0, oldest: session.date, sessionIds: [] };
       row.sessions += 1;
@@ -6135,7 +6221,707 @@ function receivables(dataset, since, today) {
 
 const defaultReceivablesSince = (today) => startOfMonth(addDaysIso(today, -90));
 
-return { chargedShare, forecastMonths, receivables, defaultReceivablesSince };
+return { chargedShare, forecastMonths, isBillable, receivables, defaultReceivablesSince };
+})();
+modules["domain/patient-report.js"] = (() => {
+const { addMonths, endOfMonth, startOfMonth } = modules["lib/dates.js"];
+const { isBillable } = modules["domain/forecast.js"];
+const { patientSituation, SITUATION, SITUATION_LABELS } = modules["domain/patients.js"];
+const { ATTENDANCE } = modules["domain/status.js"];
+// The patient report of the Financeiro tab (PDF or spreadsheet): who is in each situation and how
+// each one stands with payments, over the sessions from `since` up to today.
+
+const REPORT_SITUATION_LABELS = Object.freeze({
+  ativo: 'Ativo',
+  inativo: 'Inativo',
+  inativo_alta: 'Inativo com alta',
+  inativo_sem_alta: 'Inativo sem alta',
+  todos: 'Todos',
+});
+
+const SITUATION_FILTER = {
+  ativo: (key) => key === SITUATION.ACTIVE,
+  inativo: (key) => key !== SITUATION.ACTIVE,
+  inativo_alta: (key) => key === SITUATION.DISCHARGED,
+  inativo_sem_alta: (key) => key === SITUATION.NOT_DISCHARGED,
+  todos: () => true,
+};
+
+const PAYMENT_STATE = Object.freeze({ DUE: 'a_vencer', PAID: 'pago', OVERDUE: 'atrasado', NONE: 'sem_cobranca' });
+
+const PAYMENT_STATE_LABELS = Object.freeze({
+  [PAYMENT_STATE.DUE]: 'A vencer',
+  [PAYMENT_STATE.PAID]: 'Pago',
+  [PAYMENT_STATE.OVERDUE]: 'Atrasado',
+  [PAYMENT_STATE.NONE]: 'Sem sessão cobrada',
+});
+
+const REPORT_PAYMENT_LABELS = Object.freeze({
+  [PAYMENT_STATE.DUE]: 'A vencer',
+  [PAYMENT_STATE.PAID]: 'Pago',
+  [PAYMENT_STATE.OVERDUE]: 'Atrasado',
+  todos: 'Todos',
+});
+
+const toCents = (value) => Math.round((value || 0) * 100);
+const total = (sessions) => sessions.reduce((cents, session) => cents + toCents(session.fee), 0) / 100;
+
+/** The sessions of a month are due on `dueDay` of the next month (its last day, when shorter). */
+function dueDateOf(sessionDate, dueDay) {
+  const month = addMonths(startOfMonth(sessionDate), 1);
+  const day = Math.min(Math.max(1, Math.trunc(dueDay) || 1), Number(endOfMonth(month).slice(8)));
+  return `${month.slice(0, 8)}${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * How the patient stands with the sessions charged from `since` up to today: atrasado when one is
+ * unpaid after its due date (the due day itself still counts as a vencer), a vencer when unpaid and
+ * not due yet, pago when every one is paid.
+ */
+function paymentStanding(sessions, { since, today, dueDay }) {
+  const charged = sessions.filter((session) => isBillable(session) && session.date >= since && session.date <= today);
+  const open = charged.filter((session) => !session.paid).map((session) => ({ session, due: dueDateOf(session.date, dueDay) }));
+  const overdue = open.filter((item) => item.due < today);
+  const upcoming = open.filter((item) => item.due >= today);
+  const state = overdue.length ? PAYMENT_STATE.OVERDUE : upcoming.length ? PAYMENT_STATE.DUE : charged.length ? PAYMENT_STATE.PAID : PAYMENT_STATE.NONE;
+  return {
+    state,
+    chargedSessions: charged.length,
+    paidValue: total(charged.filter((session) => session.paid)),
+    openSessions: open.length,
+    dueValue: total(upcoming.map((item) => item.session)),
+    overdueValue: total(overdue.map((item) => item.session)),
+    // The oldest due date still unpaid: when it passed, that is when the delay started.
+    oldestDue: open.map((item) => item.due).sort()[0] ?? null,
+  };
+}
+
+/** One row per patient matching `situation` and `payment` (see the label maps), by name. */
+function buildPatientReport(dataset, indexes, { situation = 'todos', payment = 'todos', since, today, dueDay }) {
+  const keepsSituation = SITUATION_FILTER[situation] ?? SITUATION_FILTER.todos;
+  const rows = dataset.patients
+    .map((patient) => {
+      const sessions = indexes.sessionsByPatient.get(patient.id) ?? [];
+      const { key, reason } = patientSituation(patient, indexes.activeIds.has(patient.id), indexes.lastSessionByPatient.get(patient.id));
+      const standing = paymentStanding(sessions, { since, today, dueDay });
+      const lastPayment = (indexes.receivedByPatient.get(patient.id) ?? []).filter((item) => item.date && item.date <= today).at(-1) ?? null;
+      return {
+        patientId: patient.id,
+        name: patient.name,
+        guardian: patient.guardian ?? '',
+        phone: patient.phone ?? '',
+        situation: key,
+        situationLabel: SITUATION_LABELS[key],
+        reason,
+        lastSession: sessions.filter((session) => session.status === ATTENDANCE.PRESENT && session.date <= today).at(-1)?.date ?? null,
+        ...standing,
+        paymentLabel: PAYMENT_STATE_LABELS[standing.state],
+        lastPaymentDate: lastPayment?.date ?? null,
+        lastPaymentValue: lastPayment?.amount ?? null,
+      };
+    })
+    .filter((row) => keepsSituation(row.situation) && (payment === 'todos' || row.state === payment))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const sum = (field) => rows.reduce((cents, row) => cents + toCents(row[field]), 0) / 100;
+  return {
+    rows,
+    totals: {
+      patients: rows.length,
+      chargedSessions: rows.reduce((count, row) => count + row.chargedSessions, 0),
+      openSessions: rows.reduce((count, row) => count + row.openSessions, 0),
+      paidValue: sum('paidValue'),
+      dueValue: sum('dueValue'),
+      overdueValue: sum('overdueValue'),
+    },
+  };
+}
+
+return { REPORT_SITUATION_LABELS, PAYMENT_STATE, PAYMENT_STATE_LABELS, REPORT_PAYMENT_LABELS, dueDateOf, paymentStanding, buildPatientReport };
+})();
+modules["infra/pdf-writer.js"] = (() => {
+// Writes a PDF table report without any library: A4 landscape, the standard Helvetica fonts (every
+// PDF reader has them, so nothing is embedded) in the Windows-1252 encoding, which covers Portuguese.
+// The header row repeats on every page; each page says "Página X de N".
+
+// Helvetica and Helvetica-Bold widths (1/1000 em) of the codes 32–255 in WinAnsiEncoding (Adobe AFM).
+const WIDTHS = {
+  regular: [
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278,
+    500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278,
+    556, 500, 722, 500, 500, 500, 334, 260, 334, 584, 350, 556, 350, 222, 556, 333, 1000, 556, 556, 333, 1000, 667, 333, 1000, 350, 611, 350, 350, 222, 222, 333, 333, 350, 556, 1000, 333, 1000, 500, 333, 944, 350,
+    500, 667, 278, 333, 556, 556, 556, 556, 260, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 556, 537, 278, 333, 333, 365, 556, 834, 834, 834, 611, 667, 667, 667, 667, 667, 667, 1000, 722,
+    667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 500, 556, 556, 556, 556, 278, 278, 278, 278, 556, 556,
+    556, 556, 556, 556, 556, 584, 611, 556, 556, 556, 556, 500, 556, 500,
+  ],
+  bold: [
+    278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278,
+    556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333,
+    611, 556, 778, 556, 556, 500, 389, 280, 389, 584, 350, 556, 350, 278, 556, 500, 1000, 556, 556, 333, 1000, 667, 333, 1000, 350, 611, 350, 350, 278, 278, 500, 500, 350, 556, 1000, 333, 1000, 556, 333, 944, 350,
+    500, 667, 278, 333, 556, 556, 556, 556, 280, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 611, 556, 278, 333, 333, 365, 556, 834, 834, 834, 611, 722, 722, 722, 722, 722, 722, 1000, 722,
+    667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 556, 556, 556, 556, 556, 278, 278, 278, 278, 611, 611,
+    611, 611, 611, 611, 611, 584, 611, 611, 611, 611, 611, 556, 611, 556,
+  ],
+};
+
+// Windows-1252 codes 128–159 that differ from Latin-1 (the rest of 160–255 is the same).
+const CP1252 = new Map(
+  [...'€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ'].map((char, index) => [char, 128 + index]).filter(([char]) => !/[\u0081\u008d\u008f\u0090\u009d]/.test(char)),
+);
+
+/** The text as Windows-1252 codes; what the encoding lacks becomes "?". */
+function winAnsi(text) {
+  return [...String(text).replace(/[\t\r\n]+/g, ' ')].map((char) => {
+    const code = char.codePointAt(0);
+    if ((code >= 32 && code < 127) || (code >= 160 && code <= 255)) return code;
+    return CP1252.get(char) ?? 63;
+  });
+}
+
+function textWidth(text, size, bold = false) {
+  const widths = bold ? WIDTHS.bold : WIDTHS.regular;
+  return (winAnsi(text).reduce((sum, code) => sum + (widths[code - 32] ?? 556), 0) * size) / 1000;
+}
+
+/** Splits the text into lines no wider than `width` (a word longer than that is cut). */
+function wrapText(text, width, size, bold = false) {
+  const lines = [];
+  let line = '';
+  for (const word of String(text ?? '').split(/\s+/).filter(Boolean)) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (textWidth(candidate, size, bold) <= width) {
+      line = candidate;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+    while (textWidth(line, size, bold) > width && line.length > 1) {
+      let cut = line.length - 1;
+      while (cut > 1 && textWidth(line.slice(0, cut), size, bold) > width) cut -= 1;
+      lines.push(line.slice(0, cut));
+      line = line.slice(cut);
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}
+
+const pdfString = (text) => `(${String.fromCharCode(...winAnsi(text)).replace(/[\\()]/g, (char) => `\\${char}`)})`;
+
+// UTF-16BE with a byte order mark: how PDF metadata (title) carries any character.
+const pdfTextString = (text) => {
+  const value = String(text);
+  return `<FEFF${Array.from({ length: value.length }, (_, index) => value.charCodeAt(index).toString(16).padStart(4, '0')).join('')}>`;
+};
+
+const PAGE = { width: 842, height: 595, margin: 32 };
+const SIZE = { title: 15, note: 10, header: 9, body: 10, small: 9, footer: 8 };
+const PAD = 4;
+const LEADING = 1.25;
+const fmt = (value) => Number(value.toFixed(2)).toString();
+
+/** A cell is a text, or { lines: [{ text, bold, small, color: [r, g, b] }] } for several lines. */
+const cellLines = (cell) => (cell && typeof cell === 'object' ? cell.lines : [{ text: cell ?? '' }]);
+
+/**
+ * The PDF bytes of a table report. `columns`: [{ label, width (share of the page), align: 'left' |
+ * 'right' }]; `rows` and `totals` hold one cell per column; `footer`: text before "Página X de N".
+ */
+function buildPdf({ title, notes = [], columns, rows, totals = null, footer = '', date = new Date() }) {
+  const tableWidth = PAGE.width - 2 * PAGE.margin;
+  const share = columns.reduce((sum, column) => sum + column.width, 0);
+  const widths = columns.map((column) => (column.width / share) * tableWidth);
+  const layoutRow = (cells, { bold = false, size = SIZE.body } = {}) => {
+    const blocks = cells.map((cell, index) =>
+      cellLines(cell).flatMap((line) => {
+        const lineSize = line.small ? SIZE.small : size;
+        const lineBold = bold || Boolean(line.bold);
+        return wrapText(line.text, widths[index] - 2 * PAD, lineSize, lineBold).map((text) => ({ text, size: lineSize, bold: lineBold, color: line.color ?? null }));
+      }),
+    );
+    const height = Math.max(...blocks.map((lines) => lines.reduce((sum, line) => sum + line.size * LEADING, 0))) + 2 * PAD;
+    return { blocks, height };
+  };
+  const header = layoutRow(columns.map((column) => column.label), { bold: true, size: SIZE.header });
+  const body = rows.map((cells) => layoutRow(cells));
+  const totalRow = totals ? layoutRow(totals, { bold: true }) : null;
+
+  const page = () => ({ ops: [], y: PAGE.height - PAGE.margin });
+  const pages = [page()];
+  const current = () => pages.at(-1);
+  const text = (ops, value, x, y, size, bold, color) => {
+    ops.push(`${color ? color.map(fmt).join(' ') : '0 0 0'} rg BT /${bold ? 'F2' : 'F1'} ${fmt(size)} Tf ${fmt(x)} ${fmt(y)} Td ${pdfString(value)} Tj ET`);
+  };
+  const drawRow = (row, { fill = null, line = true } = {}) => {
+    const target = current();
+    const top = target.y;
+    if (fill) target.ops.push(`${fill.map(fmt).join(' ')} rg ${fmt(PAGE.margin)} ${fmt(top - row.height)} ${fmt(tableWidth)} ${fmt(row.height)} re f`);
+    let x = PAGE.margin;
+    row.blocks.forEach((lines, index) => {
+      let y = top - PAD;
+      lines.forEach((entry) => {
+        y -= entry.size;
+        const align = columns[index].align === 'right';
+        const left = align ? x + widths[index] - PAD - textWidth(entry.text, entry.size, entry.bold) : x + PAD;
+        text(target.ops, entry.text, left, y, entry.size, entry.bold, entry.color);
+        y -= entry.size * (LEADING - 1);
+      });
+      x += widths[index];
+    });
+    if (line) target.ops.push(`0.72 0.76 0.81 RG 0.5 w ${fmt(PAGE.margin)} ${fmt(top - row.height)} m ${fmt(PAGE.margin + tableWidth)} ${fmt(top - row.height)} l S`);
+    target.y = top - row.height;
+  };
+  const startTable = () => drawRow(header, { fill: [0.89, 0.91, 0.94] });
+  const bottom = PAGE.margin + 18;
+
+  text(current().ops, title, PAGE.margin, current().y - SIZE.title, SIZE.title, true);
+  current().y -= SIZE.title * 1.6;
+  notes.forEach((note) =>
+    wrapText(note, tableWidth, SIZE.note).forEach((line) => {
+      text(current().ops, line, PAGE.margin, current().y - SIZE.note, SIZE.note, false, [0.25, 0.27, 0.3]);
+      current().y -= SIZE.note * 1.4;
+    }),
+  );
+  current().y -= 6;
+  startTable();
+  [...body, ...(totalRow ? [totalRow] : [])].forEach((row, index) => {
+    if (current().y - row.height < bottom) {
+      pages.push(page());
+      startTable();
+    }
+    drawRow(row, { fill: totalRow && index === body.length ? [0.95, 0.96, 0.97] : null });
+  });
+
+  pages.forEach((target, index) => {
+    const label = `${footer ? `${footer} · ` : ''}Página ${index + 1} de ${pages.length}`;
+    text(target.ops, label, PAGE.width - PAGE.margin - textWidth(label, SIZE.footer), PAGE.margin - 4, SIZE.footer, false, [0.35, 0.37, 0.4]);
+  });
+
+  // Objects: 1 catalog, 2 page tree, 3 and 4 fonts, 5 info, then a page and its content per page.
+  const objects = [];
+  const pageIds = pages.map((_, index) => 6 + index * 2);
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`;
+  objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+  objects[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
+  const two = (part) => String(part).padStart(2, '0');
+  const offset = -date.getTimezoneOffset();
+  const zone = `${offset < 0 ? '-' : '+'}${two(Math.floor(Math.abs(offset) / 60))}'${two(Math.abs(offset) % 60)}'`;
+  const stamp = `D:${date.getFullYear()}${[date.getMonth() + 1, date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds()].map(two).join('')}${zone}`;
+  objects[5] = `<< /Title ${pdfTextString(title)} /Producer (Controle Clinico) /CreationDate (${stamp}) >>`;
+  pages.forEach((target, index) => {
+    const content = target.ops.join('\n');
+    objects[pageIds[index]] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE.width} ${PAGE.height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${pageIds[index] + 1} 0 R >>`;
+    objects[pageIds[index] + 1] = `<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+  });
+
+  // Every character of the file is one byte (the texts are already Windows-1252), so string
+  // lengths are byte offsets.
+  let file = '%PDF-1.4\n%âãÏÓ\n';
+  const offsets = [];
+  for (let id = 1; id < objects.length; id += 1) {
+    offsets[id] = file.length;
+    file += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xref = file.length;
+  file += `xref\n0 ${objects.length}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}`;
+  file += `trailer\n<< /Size ${objects.length} /Root 1 0 R /Info 5 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Uint8Array.from(file, (char) => char.charCodeAt(0));
+}
+
+return { winAnsi, textWidth, wrapText, buildPdf };
+})();
+modules["infra/xlsx-writer.js"] = (() => {
+// Writes a one-sheet .xlsx (Office Open XML) without any library: a few XML parts in a zip archive
+// stored without compression. Opens in Excel, LibreOffice and Google Sheets; dates and amounts go as
+// numbers with a format, so they can be summed and sorted there.
+
+const encoder = new TextEncoder();
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** A zip archive of `files` ([{ name, text }]), stored (method 0). */
+function zipStore(files, date = new Date()) {
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const data = encoder.encode(file.text);
+    const crc = crc32(data);
+    const local = new DataView(new ArrayBuffer(30));
+    [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [8, 0, 2], [10, dosTime, 2], [12, dosDate, 2], [14, crc, 4], [18, data.length, 4], [22, data.length, 4], [26, name.length, 2], [28, 0, 2]].forEach(([at, value, size]) =>
+      size === 4 ? local.setUint32(at, value, true) : local.setUint16(at, value, true),
+    );
+    const central = new DataView(new ArrayBuffer(46));
+    [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [10, 0, 2], [12, dosTime, 2], [14, dosDate, 2], [16, crc, 4], [20, data.length, 4], [24, data.length, 4], [28, name.length, 2], [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, 0, 4], [42, offset, 4]].forEach(([at, value, size]) =>
+      size === 4 ? central.setUint32(at, value, true) : central.setUint16(at, value, true),
+    );
+    locals.push(new Uint8Array(local.buffer), name, data);
+    centrals.push(new Uint8Array(central.buffer), name);
+    offset += 30 + name.length + data.length;
+  }
+  const centralSize = centrals.reduce((size, part) => size + part.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  [[0, 0x06054b50, 4], [4, 0, 2], [6, 0, 2], [8, files.length, 2], [10, files.length, 2], [12, centralSize, 4], [16, offset, 4], [20, 0, 2]].forEach(([at, value, size]) =>
+    size === 4 ? end.setUint32(at, value, true) : end.setUint16(at, value, true),
+  );
+  const parts = [...locals, ...centrals, new Uint8Array(end.buffer)];
+  const out = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  parts.reduce((at, part) => (out.set(part, at), at + part.length), 0);
+  return out;
+}
+
+// Control characters other than tab and line breaks are not allowed in XML 1.0.
+const escapeXml = (text) =>
+  String(text)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+/** Column letters: 0 → A, 25 → Z, 26 → AA. */
+function columnName(index) {
+  let name = '';
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) name = String.fromCharCode(65 + ((n - 1) % 26)) + name;
+  return name;
+}
+
+/** Days since 30/12/1899, as spreadsheets count dates. */
+const isoToSerial = (iso) => {
+  const [year, month, day] = iso.split('-').map(Number);
+  return (Date.UTC(year, month - 1, day) - Date.UTC(1899, 11, 30)) / 86400000;
+};
+
+// Cell styles (cellXfs below): 0 text, 1 header, 2 date, 3 money, 4 title, 5 whole number,
+// 6 bold text, 7 bold money, 8 bold whole number.
+const STYLE = { text: 0, header: 1, date: 2, money: 3, title: 4, integer: 5, boldText: 6, boldMoney: 7, boldInteger: 8 };
+
+const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="2"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/><numFmt numFmtId="165" formatCode="&quot;R$&quot;\\ #,##0.00"/></numFmts>
+<fonts count="3"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="14"/><name val="Calibri"/><family val="2"/></font></fonts>
+<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE4E9F0"/><bgColor indexed="64"/></patternFill></fill></fills>
+<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FF8A96A6"/></bottom><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="9">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="1" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="165" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="1" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+
+function cell(ref, type, value, bold = false) {
+  if (value === null || value === undefined || value === '') return '';
+  if (type === 'date') return `<c r="${ref}" s="${STYLE.date}"><v>${isoToSerial(value)}</v></c>`;
+  if (type === 'money') return `<c r="${ref}" s="${bold ? STYLE.boldMoney : STYLE.money}"><v>${Number(value)}</v></c>`;
+  if (type === 'integer') return `<c r="${ref}" s="${bold ? STYLE.boldInteger : STYLE.integer}"><v>${Number(value)}</v></c>`;
+  const style = type === 'header' ? STYLE.header : type === 'title' ? STYLE.title : bold ? STYLE.boldText : STYLE.text;
+  return `<c r="${ref}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+}
+
+const row = (number, cells) => `<row r="${number}">${cells.join('')}</row>`;
+
+/**
+ * The .xlsx bytes of one sheet: `title` and `notes` (one line each) on top, then the table with
+ * a header that stays on screen and a filter, then the `totals` row (bold).
+ * Columns: [{ label, type: 'text' | 'date' | 'money' | 'integer', width (characters) }];
+ * rows and totals: arrays of values in column order (dates as 'YYYY-MM-DD').
+ */
+function buildXlsx({ sheetName, title, notes = [], columns, rows, totals = null, date = new Date() }) {
+  const headerRow = notes.length + 3;
+  const lines = [row(1, [cell('A1', 'title', title)]), ...notes.map((note, index) => row(index + 2, [cell(`A${index + 2}`, 'text', note)]))];
+  lines.push(row(headerRow, columns.map((column, index) => cell(`${columnName(index)}${headerRow}`, 'header', column.label))));
+  rows.forEach((values, rowIndex) => {
+    const number = headerRow + 1 + rowIndex;
+    lines.push(row(number, columns.map((column, index) => cell(`${columnName(index)}${number}`, column.type, values[index]))));
+  });
+  const lastData = headerRow + rows.length;
+  if (totals) {
+    const number = lastData + 1;
+    lines.push(row(number, columns.map((column, index) => cell(`${columnName(index)}${number}`, column.type === 'date' ? 'text' : column.type, totals[index], true))));
+  }
+  const lastColumn = columnName(columns.length - 1);
+  const range = `$A$${headerRow}:$${lastColumn}$${Math.max(lastData, headerRow)}`;
+  const safeName = sheetName.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31);
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+<sheetViews><sheetView workbookViewId="0"><pane ySplit="${headerRow}" topLeftCell="A${headerRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+<sheetFormatPr defaultRowHeight="15"/>
+<cols>${columns.map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${column.width ?? 14}" customWidth="1"/>`).join('')}</cols>
+<sheetData>${lines.join('')}</sheetData>
+<autoFilter ref="${range.replace(/\$/g, '')}"/>
+<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>
+<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>
+</worksheet>`;
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="${escapeXml(safeName)}" sheetId="1" r:id="rId1"/></sheets>
+<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${escapeXml(safeName.replace(/'/g, "''"))}'!${range}</definedName><definedName name="_xlnm.Print_Titles" localSheetId="0">'${escapeXml(safeName.replace(/'/g, "''"))}'!$${headerRow}:$${headerRow}</definedName></definedNames>
+</workbook>`;
+  return zipStore(
+    [
+      {
+        name: '[Content_Types].xml',
+        text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+      },
+      {
+        name: '_rels/.rels',
+        text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+      },
+      { name: 'xl/workbook.xml', text: workbook },
+      {
+        name: 'xl/_rels/workbook.xml.rels',
+        text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+      },
+      { name: 'xl/worksheets/sheet1.xml', text: sheet },
+      { name: 'xl/styles.xml', text: STYLES_XML },
+    ],
+    date,
+  );
+}
+
+return { zipStore, columnName, isoToSerial, buildXlsx };
+})();
+modules["ui/patient-report.js"] = (() => {
+const { defaultReceivablesSince } = modules["domain/forecast.js"];
+const { saveSettings } = modules["domain/mutations.js"];
+const { SITUATION } = modules["domain/patients.js"];
+const { buildPatientReport, PAYMENT_STATE, REPORT_PAYMENT_LABELS, REPORT_SITUATION_LABELS } = modules["domain/patient-report.js"];
+const { buildPdf } = modules["infra/pdf-writer.js"];
+const { downloadFile } = modules["infra/storage.js"];
+const { buildXlsx } = modules["infra/xlsx-writer.js"];
+const { formatDate, isIsoDate } = modules["lib/dates.js"];
+const { button, card, emptyState, sectionTitle, table, toast } = modules["ui/components.js"];
+const { formatInteger, formatMoney, h } = modules["ui/dom.js"];
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const DEFAULT_DUE_DAY = 10;
+
+/** Choices as buttons in a row (no drop-down list), the chosen one pressed. */
+function choiceRow(label, labels, value, onChoose) {
+  return h(
+    'div',
+    { class: 'report-choice' },
+    h('span', { class: 'report-choice__label', id: `report-${label}` }, label),
+    h(
+      'div',
+      { class: 'segmented segmented--wrap', role: 'group', 'aria-labelledby': `report-${label}` },
+      Object.entries(labels).map(([key, text]) => h('button', { type: 'button', class: key === value ? 'is-active' : null, 'aria-pressed': String(key === value), onClick: () => onChoose(key) }, text)),
+    ),
+  );
+}
+
+const dueText = (row, today) => (row.oldestDue ? `${row.oldestDue < today ? 'venceu em' : 'vence em'} ${formatDate(row.oldestDue)}` : '');
+const contact = (row) => [row.guardian && `Resp.: ${row.guardian}`, row.phone && `Tel.: ${row.phone}`].filter(Boolean).join(' · ');
+const moneyOrDash = (value) => (value ? formatMoney(value) : '—');
+
+function filtersText(options) {
+  return `Situação: ${REPORT_SITUATION_LABELS[options.situation]} · Pagamento: ${REPORT_PAYMENT_LABELS[options.payment]} · sessões de ${formatDate(options.since)} a ${formatDate(options.today)} · vencimento no dia ${options.dueDay} do mês seguinte`;
+}
+
+const fileName = (options, extension) => `relatorio-pacientes-${options.situation}-${options.payment}-${options.today}.${extension}`;
+
+function downloadPdf(report, options) {
+  const red = [0.72, 0.07, 0.11];
+  const bytes = buildPdf({
+    title: 'Relatório de pacientes',
+    notes: [filtersText(options), `${formatInteger(report.totals.patients)} pacientes · atrasado ${formatMoney(report.totals.overdueValue)} · a vencer ${formatMoney(report.totals.dueValue)} · pago ${formatMoney(report.totals.paidValue)}`],
+    columns: [
+      { label: 'Paciente', width: 2.3 },
+      { label: 'Situação', width: 2 },
+      { label: 'Última sessão realizada', width: 0.95 },
+      { label: 'Pagamento', width: 1.25 },
+      { label: 'Sessões cobradas', width: 0.75, align: 'right' },
+      { label: 'Pago', width: 1, align: 'right' },
+      { label: 'A vencer', width: 1, align: 'right' },
+      { label: 'Atrasado', width: 1, align: 'right' },
+      { label: 'Último pagamento', width: 1 },
+    ],
+    rows: report.rows.map((row) => [
+      { lines: [{ text: row.name, bold: true }, ...(contact(row) ? [{ text: contact(row), small: true }] : [])] },
+      { lines: [{ text: row.situationLabel }, ...(row.reason ? [{ text: row.reason, small: true }] : [])] },
+      formatDate(row.lastSession),
+      { lines: [{ text: row.paymentLabel, bold: row.state === PAYMENT_STATE.OVERDUE, color: row.state === PAYMENT_STATE.OVERDUE ? red : null }, ...(dueText(row, options.today) ? [{ text: dueText(row, options.today), small: true }] : [])] },
+      String(row.chargedSessions),
+      moneyOrDash(row.paidValue),
+      moneyOrDash(row.dueValue),
+      moneyOrDash(row.overdueValue),
+      row.lastPaymentDate ? { lines: [{ text: formatDate(row.lastPaymentDate) }, { text: formatMoney(row.lastPaymentValue), small: true }] } : '—',
+    ]),
+    totals: [`Total: ${formatInteger(report.totals.patients)} pacientes`, '', '', '', String(report.totals.chargedSessions), formatMoney(report.totals.paidValue), formatMoney(report.totals.dueValue), formatMoney(report.totals.overdueValue), ''],
+    footer: `Controle Clínico · gerado em ${formatDate(options.today)}`,
+  });
+  downloadFile(fileName(options, 'pdf'), bytes, 'application/pdf');
+}
+
+function downloadXlsx(report, options) {
+  const bytes = buildXlsx({
+    sheetName: 'Relatório',
+    title: 'Relatório de pacientes',
+    notes: [filtersText(options), `Gerado em ${formatDate(options.today)} pelo Controle Clínico.`],
+    columns: [
+      { label: 'Paciente', type: 'text', width: 32 },
+      { label: 'Responsável financeiro', type: 'text', width: 24 },
+      { label: 'Telefone', type: 'text', width: 16 },
+      { label: 'Situação', type: 'text', width: 18 },
+      { label: 'Motivo (inativo sem alta)', type: 'text', width: 40 },
+      { label: 'Última sessão realizada', type: 'date', width: 13 },
+      { label: 'Pagamento', type: 'text', width: 18 },
+      { label: 'Sessões cobradas', type: 'integer', width: 10 },
+      { label: 'Sessões em aberto', type: 'integer', width: 10 },
+      { label: 'Pago (R$)', type: 'money', width: 14 },
+      { label: 'A vencer (R$)', type: 'money', width: 14 },
+      { label: 'Atrasado (R$)', type: 'money', width: 14 },
+      { label: 'Vencimento mais antigo em aberto', type: 'date', width: 14 },
+      { label: 'Último pagamento', type: 'date', width: 13 },
+      { label: 'Valor do último pagamento (R$)', type: 'money', width: 14 },
+    ],
+    rows: report.rows.map((row) => [
+      row.name,
+      row.guardian,
+      row.phone,
+      row.situationLabel,
+      row.situation === SITUATION.NOT_DISCHARGED ? row.reason : '',
+      row.lastSession,
+      row.paymentLabel,
+      row.chargedSessions,
+      row.openSessions,
+      row.paidValue,
+      row.dueValue,
+      row.overdueValue,
+      row.oldestDue,
+      row.lastPaymentDate,
+      row.lastPaymentValue,
+    ]),
+    totals: [`Total: ${report.totals.patients} pacientes`, '', '', '', '', '', '', report.totals.chargedSessions, report.totals.openSessions, report.totals.paidValue, report.totals.dueValue, report.totals.overdueValue, '', '', ''],
+  });
+  downloadFile(fileName(options, 'xlsx'), bytes, XLSX_TYPE);
+}
+
+function previewTable(report, today) {
+  const { rows, totals } = report;
+  return table(
+    ['Paciente', 'Situação', 'Última sessão realizada', 'Pagamento', { label: 'Sessões cobradas', className: 'num' }, { label: 'Pago', className: 'num' }, { label: 'A vencer', className: 'num' }, { label: 'Atrasado', className: 'num' }, 'Último pagamento'],
+    rows.map((row) =>
+      h(
+        'tr',
+        {},
+        h('td', {}, h('strong', {}, row.name), contact(row) ? h('div', { class: 'muted' }, contact(row)) : null),
+        h('td', {}, row.situationLabel, row.reason ? h('div', { class: 'muted' }, row.reason) : null),
+        h('td', {}, formatDate(row.lastSession)),
+        h('td', {}, h('span', { class: row.state === PAYMENT_STATE.OVERDUE ? 'text-danger report-overdue' : null }, row.paymentLabel), dueText(row, today) ? h('div', { class: 'muted' }, dueText(row, today)) : null),
+        h('td', { class: 'num' }, row.chargedSessions),
+        h('td', { class: 'num' }, moneyOrDash(row.paidValue)),
+        h('td', { class: 'num' }, moneyOrDash(row.dueValue)),
+        h('td', { class: `num ${row.overdueValue ? 'text-danger' : ''}`.trim() }, moneyOrDash(row.overdueValue)),
+        h('td', {}, row.lastPaymentDate ? [formatDate(row.lastPaymentDate), h('div', { class: 'muted' }, formatMoney(row.lastPaymentValue))] : '—'),
+      ),
+    ),
+    {
+      footer: h(
+        'tr',
+        {},
+        h('th', { scope: 'row', colspan: '4' }, `Total: ${formatInteger(totals.patients)} pacientes`),
+        h('th', { class: 'num', 'data-label': 'Sessões cobradas' }, totals.chargedSessions),
+        h('th', { class: 'num', 'data-label': 'Pago' }, formatMoney(totals.paidValue)),
+        h('th', { class: 'num', 'data-label': 'A vencer' }, formatMoney(totals.dueValue)),
+        h('th', { class: 'num', 'data-label': 'Atrasado' }, formatMoney(totals.overdueValue)),
+        h('th', {}),
+      ),
+    },
+  );
+}
+
+/** Financeiro › "Relatório de pacientes": filters, the list on screen and the PDF / XLSX files. */
+function patientReportCard(app) {
+  const { settings } = app.dataset;
+  const options = {
+    situation: app.ui.reportSituation ?? 'ativo',
+    payment: app.ui.reportPayment ?? 'todos',
+    since: settings.receivablesSince ?? defaultReceivablesSince(app.today),
+    today: app.today,
+    dueDay: settings.paymentDueDay ?? DEFAULT_DUE_DAY,
+  };
+  const report = buildPatientReport(app.dataset, app.indexes, options);
+  const sinceInput = h('input', {
+    class: 'input',
+    type: 'date',
+    value: options.since,
+    'aria-label': 'Sessões a partir de',
+    onChange: (event) => isIsoDate(event.target.value) && app.commit(saveSettings(app.dataset, { receivablesSince: event.target.value })),
+  });
+  const dueDayInput = h('input', {
+    class: 'input input--day',
+    type: 'number',
+    min: '1',
+    max: '31',
+    inputmode: 'numeric',
+    value: String(options.dueDay),
+    'aria-label': 'Dia do vencimento',
+    onChange: (event) => {
+      const day = Number(event.target.value);
+      if (Number.isInteger(day) && day >= 1 && day <= 31) app.commit(saveSettings(app.dataset, { paymentDueDay: day }));
+      else toast('Informe um dia de 1 a 31.', 'error');
+    },
+  });
+  const download = (save) => () => {
+    save(report, options);
+    toast('Relatório gerado: veja a pasta de downloads.');
+  };
+  return card(
+    { class: 'patient-report' },
+    sectionTitle('Relatório de pacientes (PDF ou planilha)'),
+    h('p', { class: 'muted' }, 'Escolha a situação e o pagamento. A lista abaixo mostra exatamente o que vai no arquivo.'),
+    choiceRow('Situação', REPORT_SITUATION_LABELS, options.situation, (value) => app.setUi({ reportSituation: value })),
+    choiceRow('Pagamento', REPORT_PAYMENT_LABELS, options.payment, (value) => app.setUi({ reportPayment: value })),
+    h(
+      'div',
+      { class: 'page-actions report-dates' },
+      h('label', { class: 'report-inline' }, h('span', {}, 'Sessões a partir de'), sinceInput),
+      h('label', { class: 'report-inline' }, h('span', {}, 'Vencimento: dia'), dueDayInput, h('span', {}, 'do mês seguinte')),
+    ),
+    report.rows.length
+      ? h(
+          'div',
+          { class: 'page-actions' },
+          button('Baixar PDF', { onClick: download(downloadPdf) }),
+          button('Baixar planilha (XLSX)', { variant: 'secondary', onClick: download(downloadXlsx) }),
+          h('span', { class: 'muted' }, `${formatInteger(report.totals.patients)} pacientes · atrasado ${formatMoney(report.totals.overdueValue)} · a vencer ${formatMoney(report.totals.dueValue)}`),
+        )
+      : null,
+    report.rows.length ? previewTable(report, app.today) : emptyState('Nenhum paciente com essa situação e esse pagamento.'),
+    h(
+      'p',
+      { class: 'muted' },
+      'Atrasado: alguma sessão cobrada sem pagamento depois do vencimento. A vencer: sessões cobradas sem pagamento que ainda não venceram (no dia do vencimento ainda é a vencer). Pago: todas as sessões cobradas desde a data acima estão pagas. As sessões de cada mês vencem no dia escolhido do mês seguinte. Inativo sem alta: quem você marcou assim (com o motivo) e quem não tem sessão há mais de 90 dias sem alta registrada.',
+    ),
+  );
+}
+
+return { patientReportCard };
 })();
 modules["ui/payments-summary.js"] = (() => {
 const { defaultReceivablesSince, forecastMonths, receivables } = modules["domain/forecast.js"];
@@ -6440,6 +7226,7 @@ const { formatDate, formatMonth, monthOf, monthsEndingAt } = modules["lib/dates.
 const { button, card, emptyState, kpiCard, pageHeader, periodLabel, periodPicker, table } = modules["ui/components.js"];
 const { formatMoney, h } = modules["ui/dom.js"];
 const { confirmDeletePayment, openPaymentForm } = modules["ui/forms.js"];
+const { patientReportCard } = modules["ui/patient-report.js"];
 const { paymentsSummary } = modules["ui/payments-summary.js"];
 const { pendingDepositsCard } = modules["ui/pending-deposits.js"];
 function yearOfPeriod(app) {
@@ -6545,6 +7332,7 @@ function renderFinance(app) {
       kpiCard({ label: 'Diferença', value: formatMoney(billed - received), detail: 'Indicativa (pagamentos podem cair no mês seguinte)', tone: 'warning' }),
     ),
     pendingDepositsCard(app),
+    patientReportCard(app),
     paymentsSummary(app),
     monthlyIncomeCard(app, yearOfPeriod(app)),
     perPatientCard(app, period),
@@ -7962,21 +8750,17 @@ modules["ui/patients-table.js"] = (() => {
 const { defaultReceivablesSince, receivables } = modules["domain/forecast.js"];
 const { summarizeSessions } = modules["domain/metrics.js"];
 const { savePatient } = modules["domain/mutations.js"];
-const { FREQUENCY_LABELS, PATIENT_STATUS, WEEKLY_COUNT_PERIOD } = modules["domain/patients.js"];
+const { FREQUENCY_LABELS, PATIENT_STATUS, PATIENT_STATUS_LABELS, WEEKLY_COUNT_PERIOD } = modules["domain/patients.js"];
 const { scheduledSlotsOn } = modules["domain/schedule.js"];
 const { ATTENDANCE } = modules["domain/status.js"];
 const { addDaysIso, eachDay, formatDate, isTime, WEEKDAY_NAMES } = modules["lib/dates.js"];
 const { button, emptyState, select, signalLabel, table } = modules["ui/components.js"];
 const { formatMoney, formatPercent, h, parseMoneyInput } = modules["ui/dom.js"];
-const { openPatientForm } = modules["ui/forms.js"];
+const { openInactiveReasonDialog, openPatientForm } = modules["ui/forms.js"];
 const { checkPatientSlot, slotCheckBox } = modules["ui/scheduling-form.js"];
 const { confirmDroppedSlots, weeklyCountControl } = modules["ui/weekly-count.js"];
 const LOOKAHEAD_DAYS = 62;
-const STATUS_OPTIONS = [
-  [PATIENT_STATUS.AUTO, 'Automático'],
-  [PATIENT_STATUS.ACTIVE, 'Ativo'],
-  [PATIENT_STATUS.CLOSED, 'Encerrado / alta'],
-];
+const STATUS_OPTIONS = Object.entries(PATIENT_STATUS_LABELS);
 const moneyText = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
 const slotText = (slot) => `${WEEKDAY_NAMES[slot.weekday].slice(0, 3)} ${slot.time || 'sem horário'}`;
 
@@ -7986,6 +8770,13 @@ function updatePatient(app, patientId, patch) {
     const current = app.dataset.patients.find((patient) => patient.id === patientId);
     if (current) app.commit(savePatient(app.dataset, { ...current, ...patch }));
   });
+}
+
+/** "Inativo sem alta" asks for the reason first; giving up puts the list back as it was. */
+function changeStatus(app, patient, control) {
+  const status = control.value;
+  if (status !== PATIENT_STATUS.INACTIVE) return updatePatient(app, patient.id, { status });
+  openInactiveReasonDialog(patient, (reason) => updatePatient(app, patient.id, { status, inactiveReason: reason }), () => (control.value = patient.status));
 }
 
 function nextAppointment(app, patient) {
@@ -8101,9 +8892,16 @@ function patientRow(app, patient, openByPatient, since) {
           ariaLabel: `Situação de ${patient.name}`,
           className: 'input--status',
           dataset: { focusKey: `${patient.id}|status` },
-          onChange: (event) => updatePatient(app, patient.id, { status: event.target.value }),
+          onChange: (event) => changeStatus(app, patient, event.target),
         }),
       ),
+      patient.status === PATIENT_STATUS.INACTIVE
+        ? h(
+            'div',
+            { class: 'cell-sub' },
+            h('button', { class: 'link', type: 'button', title: 'Mudar o motivo', onClick: () => openInactiveReasonDialog(patient, (reason) => updatePatient(app, patient.id, { inactiveReason: reason })) }, `Motivo: ${patient.inactiveReason || 'não informado'}`),
+          )
+        : null,
     ),
     h('td', { class: 'cell-grow', 'data-label': 'Dias e horários' }, scheduleEditor(app, patient)),
     h(
@@ -8163,7 +8961,7 @@ return { nextAppointment, patientsTable };
 modules["ui/views/patients.js"] = (() => {
 const { mergePatients } = modules["domain/deposits.js"];
 const { PAYMENT_ORIGIN_LABELS, patientTotals, summarizeSessions } = modules["domain/metrics.js"];
-const { FREQUENCY_LABELS } = modules["domain/patients.js"];
+const { FREQUENCY_LABELS, patientSituation, SITUATION_LABELS } = modules["domain/patients.js"];
 const { attendanceSignal, paymentSignal } = modules["domain/signals.js"];
 const { formatDate, formatMonth, monthOf, WEEKDAY_NAMES } = modules["lib/dates.js"];
 const { normalizeText } = modules["lib/text.js"];
@@ -8174,9 +8972,14 @@ const { confirmDeletePayment, openPatientForm, openPaymentForm, openSessionForm 
 const { nextAppointment, patientsTable } = modules["ui/patients-table.js"];
 const FILTERS = [
   ['ativos', 'Ativos'],
-  ['inativos', 'Inativos / encerrados'],
+  ['inativos', 'Inativos (com ou sem alta)'],
   ['todos', 'Todos'],
 ];
+
+function situationText(app, patient) {
+  const { key, reason } = patientSituation(patient, app.indexes.activeIds.has(patient.id), app.indexes.lastSessionByPatient.get(patient.id));
+  return `Paciente: ${SITUATION_LABELS[key].toLowerCase()}${reason ? ` · ${reason}` : ''}`;
+}
 
 function scheduleText(patient) {
   if (!patient.schedule.length) return 'Sem dia fixo';
@@ -8347,7 +9150,7 @@ function renderDetail(app, patient) {
     button('‹ Voltar para a lista', { variant: 'ghost', onClick: () => app.setUi({ patientId: null }) }),
     pageHeader(
       patient.name,
-      app.indexes.activeIds.has(patient.id) ? 'Paciente ativo' : 'Paciente inativo / encerrado',
+      situationText(app, patient),
       button('Editar cadastro', { variant: 'secondary', onClick: () => openPatientForm(app, patient) }),
       button('Unificar com…', { variant: 'secondary', onClick: () => openMergeDialog(app, patient) }),
       button('Registrar pagamento', { variant: 'secondary', onClick: () => openPaymentForm(app, { patientId: patient.id }) }),
@@ -8382,7 +9185,7 @@ modules["ui/manual-content.js"] = (() => {
 // Blocks: { p } paragraph, { steps } numbered steps, { list } bullets, { tip } highlighted note,
 // { leds } the LED legend drawn with the real LEDs. **text** is shown in bold (names on the screen).
 
-const MANUAL_UPDATED = '2026-10-20';
+const MANUAL_UPDATED = '2026-10-25';
 
 const MANUAL = [
   {
@@ -8556,7 +9359,8 @@ const MANUAL = [
     id: 'pacientes',
     title: 'Pacientes',
     blocks: [
-      { p: 'A aba **Pacientes** lista cada paciente com a situação (**Ativo** ou **Inativo**), os dias e horários fixos, o valor, o histórico, a última e a próxima sessão e o que está **Em aberto**. Use **Buscar paciente…** para achar alguém e o filtro para ver **Ativos**, **Inativos / encerrados** ou **Todos**.' },
+      { p: 'A aba **Pacientes** lista cada paciente com a situação (**Ativo** ou **Inativo**), os dias e horários fixos, o valor, o histórico, a última e a próxima sessão e o que está **Em aberto**. Use **Buscar paciente…** para achar alguém e o filtro para ver **Ativos**, **Inativos (com ou sem alta)** ou **Todos**.' },
+      { p: 'Embaixo do nome fica a situação, que você pode mudar: **Automático** (ativo enquanto teve sessão nos últimos 90 dias), **Ativo**, **Inativo com alta** (tratamento encerrado) ou **Inativo sem alta**. Ao escolher **Inativo sem alta**, o sistema pede o **Motivo da inatividade** (por exemplo: pausa a pedido do paciente, mudou de cidade); sem motivo não salva, e **Cancelar** deixa a situação como estava. O motivo aparece embaixo da situação; toque nele para mudar.' },
       { p: 'Os dias, horários e o valor podem ser mudados direto na linha. Use **− N vezes por semana +** para mudar quantas vezes por semana, ajuste o dia e o horário de cada linha e a frequência (**Semanal**, **Quinzenal**, **Mensal** ou **Avulsa**). O **×** tira um dia. Se o horário já é de outro paciente, não salva e mostra os horários livres.' },
       { steps: [
         'Para um paciente novo, toque em **Cadastrar**.',
@@ -8592,6 +9396,30 @@ const MANUAL = [
         '**Já está na ficha**, se o pagamento já tinha sido lançado;',
         '**Não é de paciente**, se não for pagamento de sessão.',
       ] },
+      { p: 'Logo abaixo fica o **Relatório de pacientes (PDF ou planilha)**: veja o próximo assunto.' },
+    ],
+  },
+  {
+    id: 'relatorio',
+    title: 'Relatório de pacientes (PDF ou planilha)',
+    blocks: [
+      { p: 'Gera a lista dos pacientes com a situação de cada um e como está o pagamento, num arquivo PDF (para ler ou imprimir) ou numa planilha XLSX (para abrir no Excel).' },
+      { steps: [
+        'Abra a aba **Financeiro** e desça até **Relatório de pacientes (PDF ou planilha)**.',
+        'Em **Situação**, toque em **Ativo**, **Inativo**, **Inativo com alta**, **Inativo sem alta** ou **Todos**.',
+        'Em **Pagamento**, toque em **A vencer**, **Pago**, **Atrasado** ou **Todos**.',
+        'Confira a lista que aparece embaixo: é exatamente o que vai no arquivo, com o total no fim.',
+        'Toque em **Baixar PDF** ou em **Baixar planilha (XLSX)**. O arquivo vai para a pasta de downloads.',
+      ] },
+      { list: [
+        '**Atrasado**: alguma sessão cobrada está sem pagamento depois do vencimento ("venceu em").',
+        '**A vencer**: há sessões cobradas sem pagamento que ainda não venceram ("vence em"); no dia do vencimento ainda é a vencer.',
+        '**Pago**: todas as sessões cobradas estão pagas.',
+        '**Sem sessão cobrada**: não houve sessão cobrada no período (aparece só com **Todos**).',
+        '**Inativo sem alta** mostra o motivo: o que você escreveu ou, para quem só deixou de vir, "Sem sessão há mais de 90 dias".',
+      ] },
+      { tip: '**Sessões a partir de** é a data desde quando o relatório olha as sessões (a mesma de **Considerar em aberto a partir de**). **Vencimento: dia 10 do mês seguinte** quer dizer que as sessões de outubro vencem em 10 de novembro; mude o dia se o combinado com os pacientes for outro.' },
+      { tip: 'O arquivo tem nomes e dados de pacientes: guarde-o só no seu computador e apague quando não precisar mais.' },
     ],
   },
   {
